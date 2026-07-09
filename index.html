@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HaikuScript Engine</title>
+  <style>
+    body { font-family: system-ui, sans-serif; text-align: center; padding: 3rem; }
+    #result {
+      display: inline-block;
+      margin-top: 1.5rem;
+      padding: 1rem 2rem;
+      font-size: 2rem;
+      font-weight: bold;
+      border-radius: 8px;
+      background: #f2f2f2;
+      color: #333;
+    }
+    #result.ok { background: #e6ffed; color: #087a2f; }
+    #result.err { background: #ffecec; color: #c40000; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>HaikuScript WebAssembly Sandbox</h1>
+  <p>Your compiled poetry runs below (and logs to the browser console).</p>
+  <div id="result">Running…</div>
+
+  <script>
+    async function loadPoemExecution() {
+      const output = document.getElementById('result');
+      try {
+        const serverResponse = await fetch('fibonacci.wasm');
+        const compiledInstance = await WebAssembly.instantiate(await serverResponse.arrayBuffer());
+        const calculationResult = compiledInstance.instance.exports.compute();
+
+        output.textContent = 'Result: ' + calculationResult;
+        output.className = 'ok';
+        console.log("%c[HaikuScript Result Processed]: " + calculationResult, "color:#00ff00; font-weight:bold; font-size:16px;");
+      } catch (err) {
+        output.textContent = 'WASM Runtime Error: ' + err.message;
+        output.className = 'err';
+        console.error("WASM Runtime Error:", err);
+      }
+    }
+    loadPoemExecution();
+  </script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HaikuScript REPL</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      max-width: 1100px;
+      margin-inline: auto;
+    }
+    h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+    p.sub { margin: 0 0 1rem; opacity: .7; font-size: .9rem; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+    button {
+      font: inherit; padding: .45rem .9rem; border: 1px solid #8888; border-radius: 6px;
+      background: #f4f4f4; cursor: pointer;
+    }
+    button:hover { background: #e8e8e8; }
+    #runBtn { background: #0b7; border-color: #0b7; color: #fff; font-weight: 600; }
+    #runBtn:hover { background: #0a6; }
+    #fileName { margin-left: auto; font-size: .85rem; opacity: .8; font-family: ui-monospace, monospace; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    textarea {
+      width: 100%; height: 340px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: .95rem; line-height: 1.5; padding: .75rem; border: 1px solid #8886; border-radius: 8px;
+      resize: vertical; background: #fff; color: #111;
+    }
+    @media (prefers-color-scheme: dark) { textarea { background: #1b1b1b; color: #eee; } }
+    .status { margin: .6rem 0; font-size: .85rem; min-height: 1.2em; }
+    .status.busy { color: #b70; } .status.ok { color: #087a2f; } .status.err { color: #c40000; }
+    .result {
+      font-size: 1.6rem; font-weight: bold; padding: .8rem 1rem; border-radius: 8px;
+      background: #f2f2f2; color: #333; margin-bottom: 1rem;
+    }
+    .result.ok { background: #e6ffed; color: #087a2f; }
+    .result.err { background: #ffecec; color: #c40000; font-size: 1rem; }
+    details { border: 1px solid #8886; border-radius: 8px; margin-bottom: .6rem; }
+    summary { cursor: pointer; padding: .5rem .75rem; font-weight: 600; }
+    pre {
+      margin: 0; padding: .75rem; overflow-x: auto; font-size: .82rem;
+      border-top: 1px solid #8884; background: #00000008;
+    }
+  </style>
+</head>
+<body>
+  <h1>HaikuScript REPL</h1>
+  <p class="sub">Edit the poem, then Run — parse → syllable audit → AST → WAT → WASM → execute, all in your browser.</p>
+
+  <div class="toolbar">
+    <button id="runBtn" title="Ctrl+Enter">▶ Run</button>
+    <button id="openBtn">Open…</button>
+    <button id="saveBtn" title="Ctrl+S">Save</button>
+    <button id="saveAsBtn">Save As…</button>
+    <span id="fileName">untitled.hk</span>
+    <input id="filePicker" type="file" accept=".hk,text/plain" hidden>
+  </div>
+
+  <div class="grid">
+    <div>
+      <textarea id="editor" spellcheck="false"></textarea>
+      <div id="status" class="status"></div>
+    </div>
+    <div>
+      <div id="result" class="result">—</div>
+      <details open>
+        <summary>Tokens</summary>
+        <pre id="tokens"></pre>
+      </details>
+      <details>
+        <summary>AST</summary>
+        <pre id="ast"></pre>
+      </details>
+      <details>
+        <summary>WebAssembly Text (.wat)</summary>
+        <pre id="wat"></pre>
+      </details>
+    </div>
+  </div>
+
+  <!-- Shared compiler core, then the two WASM toolchains, then the REPL driver -->
+  <script src="/haiku-core.js"></script>
+  <script src="/node_modules/web-tree-sitter/tree-sitter.js"></script>
+  <script src="/node_modules/wabt/index.js"></script>
+  <script src="/repl.js"></script>
+</body>
+</html>
