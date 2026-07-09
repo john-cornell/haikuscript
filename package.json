@@ -3,6 +3,7 @@
   "publisher": "ghastly-bluff",
   "version": "1.0.0",
   "description": "Production-grade HaikuScript Ecosystem",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "./vsc-extension/extension.js",
   "engines": {
     "node": ">=20",

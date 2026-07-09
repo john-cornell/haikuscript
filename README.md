@@ -147,3 +147,9 @@ code --extensionDevelopmentPath="C:\Code\Fizzbash\haikuscript" fibonacci.hk
 2. Intentionally create an absolute grammar violation on line 7 (e.g., change `Set z to the x` to `Set z to the x errorme`).
 3. Press **Ctrl + S** to save the file.
 4. The background compiler bridge immediately awakens, audits your syllable structure, and casts a **red syntax error squiggly** right underneath your modified line!
+
+---
+
+## 📜 License
+
+Permissive, MIT-derived — use it for anything, with two conditions: **don't use it to kill or seriously harm anyone**, and **don't use it to advance far-right / fascist movements**. See [`LICENSE`](LICENSE) for the full text. (The use restrictions mean it's technically *source-available* rather than an OSI-approved "open source" license.)

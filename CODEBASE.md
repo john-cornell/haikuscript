@@ -11,6 +11,7 @@ This file contains the complete source code for the HaikuScript compiler fronten
   "publisher": "ghastly-bluff",
   "version": "1.0.0",
   "description": "Production-grade HaikuScript Ecosystem",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "./vsc-extension/extension.js",
   "engines": {
     "node": ">=20",
