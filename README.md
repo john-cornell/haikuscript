@@ -152,4 +152,4 @@ code --extensionDevelopmentPath="C:\Code\Fizzbash\haikuscript" fibonacci.hk
 
 ## 📜 License
 
-Permissive, MIT-derived — use it for anything, with two conditions: **don't use it to kill or seriously harm anyone**, and **don't use it to advance far-right / fascist movements**. See [`LICENSE`](LICENSE) for the full text. (The use restrictions mean it's technically *source-available* rather than an OSI-approved "open source" license.)
+Licensed under the **[Hippocratic License 2.1](https://firstdonoharm.dev/version/2/1/)** — a recognised [Ethical Source](https://ethicalsource.dev) license. Broad permission to use, modify, and distribute the software, **conditioned on not using it in ways that violate human rights** (as defined by the UN Universal Declaration of Human Rights and the UN Global Compact). See [`LICENSE`](LICENSE) for the full text. (Ethical Source licenses are source-available rather than OSI-approved "open source".)
