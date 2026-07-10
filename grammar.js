@@ -1,8 +1,8 @@
 module.exports = grammar({
   name: 'haikuscript',
 
-  // Ignore spaces and tabs, but keep newlines strictly structural
-  extras: $ => [/[ \t\r]+/], 
+  // Ignore spaces, tabs, and commas, but keep newlines strictly structural
+  extras: $ => [/[ \t\r,]+/], 
 
   rules: {
     // A program is a repetition of stanzas OR random blank lines
@@ -18,8 +18,8 @@ module.exports = grammar({
     // A line is just a series of one or more words
     line: $ => repeat1($.word),
 
-    // A word is any collection of letters
-    word: $ => /[a-zA-Z]+/,
+    // A word is any collection of letters or digits
+    word: $ => /[a-zA-Z]+|[0-9]+/,
 
     newline: $ => /\n/
   }

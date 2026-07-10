@@ -6,7 +6,7 @@
   (#match? @keyword.function "^(dream|imagine|random|randomly|something)$"))
 
 ((word) @number
-  (#match? @number "^(zero|one|ten)$"))
+  (#match? @number "^(zero|one|ten|[0-9]+)$"))
 
 ((word) @comment
   (#match? @comment "^(the|is|it|quietly|gently|suddenly|always|beautifully|telling|sequence)$"))

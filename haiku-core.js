@@ -45,6 +45,54 @@
     }
   }
 
+  function getNumberSyllables(n) {
+    if (n === 0) return 2; // "zero" (2)
+    
+    const unitsSyllables = [
+      0, 1, 1, 1, 1, 1, 1, 2, 1, 1, // 0-9
+      1, 3, 1, 2, 2, 2, 2, 3, 2, 2  // 10-19
+    ];
+    const tensSyllables = [
+      0, 0, 2, 2, 2, 2, 2, 3, 2, 2  // 0-90
+    ];
+
+    let count = 0;
+    let originalN = n;
+
+    if (n >= 1000000) {
+      const millions = Math.floor(n / 1000000);
+      count += getNumberSyllables(millions) + 2; // "[millions] million"
+      n = n % 1000000;
+    }
+
+    if (n >= 1000) {
+      const thousands = Math.floor(n / 1000);
+      count += getNumberSyllables(thousands) + 2; // "[thousands] thousand"
+      n = n % 1000;
+    }
+
+    if (n >= 100) {
+      const hundreds = Math.floor(n / 100);
+      count += getNumberSyllables(hundreds) + 2; // "[hundreds] hundred"
+      n = n % 100;
+    }
+
+    if (n > 0) {
+      if (originalN > n && originalN >= 100) {
+        count += 1; // "and"
+      }
+      if (n < 20) {
+        count += unitsSyllables[n];
+      } else {
+        const tens = Math.floor(n / 10);
+        const units = n % 10;
+        count += tensSyllables[tens] + unitsSyllables[units];
+      }
+    }
+
+    return count;
+  }
+
   // PHASE 1: Lexing + Semantic Analysis (Syllable Auditing).
   // The grammar is trivial — a line is a run of letter-words — so we tokenize by
   // hand instead of pulling in a parser. (A Tree-sitter grammar, `grammar.js`, is
@@ -57,7 +105,8 @@
 
     const lines = source.split('\n');
     for (let row = 0; row < lines.length; row++) {
-      const words = lines[row].match(/[a-zA-Z]+/g);
+      const cleanLine = lines[row].replace(/,/g, '');
+      const words = cleanLine.match(/[a-zA-Z]+|[0-9]+/g);
       if (!words) continue; // blank / word-less line — not a code line
 
       const currentLineNum = row + 1;
@@ -66,6 +115,17 @@
 
       for (const rawWord of words) {
         const wordText = rawWord.toLowerCase();
+
+        if (/^[0-9]+$/.test(wordText)) {
+          const val = parseInt(wordText, 10);
+          runningSyllables += getNumberSyllables(val);
+          tokens.push({
+            type: "NUMBER",
+            value: val,
+            line: currentLineNum
+          });
+          continue;
+        }
 
         if (!VOCAB[wordText]) {
           throw new HaikuError(currentLineNum, `Forbidden word "${wordText}" is outside the allowable vocabulary dictionary.`);
