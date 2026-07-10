@@ -29,25 +29,22 @@ This file contains the complete source code for the HaikuScript compiler fronten
     }]
   },
   "scripts": {
-    "build-parser": "npx tree-sitter generate && npx tree-sitter build --wasm",
     "tokens": "node haiku.js --dump-tokens fibonacci.hk",
     "ast": "node haiku.js --dump-ast fibonacci.hk",
     "compile": "node haiku.js --compile fibonacci.hk",
     "serve": "serve .",
     "repl": "serve ."
   },
-  "devDependencies": {
-    "tree-sitter-cli": "^0.26.10"
-  },
   "dependencies": {
     "serve": "^14.2.1",
-    "wabt": "^1.0.36",
-    "web-tree-sitter": "^0.20.8"
+    "wabt": "^1.0.36"
   }
 }
 ```
 
-## 2. Tree-sitter Structural Rules (`grammar.js`)
+## 2. Tree-sitter Structural Rules (`grammar.js`) — *optional, editor tooling only*
+
+> Not used to run or compile — the runtime lexer is hand-written (see §4). This grammar lets an editor parse/highlight `.hk` files, and documents the exact structure the hand lexer reproduces.
 ```javascript
 module.exports = grammar({
   name: 'haikuscript',
@@ -77,7 +74,9 @@ module.exports = grammar({
 });
 ```
 
-## 3. Tree-sitter Syntax Highlight Matchers (`queries/highlights.scm`)
+## 3. Tree-sitter Syntax Highlight Matchers (`queries/highlights.scm`) — *optional, editor tooling only*
+
+> Pairs with §2 for editor highlighting; not part of the runtime.
 ```query
 ; Use Tree-sitter predicates to map plain words to official editor syntax tokens
 ((word) @keyword
@@ -146,24 +145,27 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     }
   }
 
-  // PHASE 1: Semantic Analysis (Syllable Auditing).
-  // Takes a parsed Tree-sitter `tree` plus its `Lang` (same object shape in Node
-  // and browser web-tree-sitter) and returns the token stream. Throws HaikuError.
-  function tokenize(tree, Lang) {
-    const query = Lang.query('(line) @line');
-    const matches = query.matches(tree.rootNode);
-
+  // PHASE 1: Lexing + Semantic Analysis (Syllable Auditing).
+  // The grammar is trivial — a line is a run of letter-words — so we tokenize by
+  // hand instead of pulling in a parser. (A Tree-sitter grammar, `grammar.js`, is
+  // kept alongside as an optional source of editor highlighting; it is NOT used at
+  // runtime.) Each non-blank source line is one code line, checked against the
+  // repeating 5/7/5 meter. Returns the token stream. Throws HaikuError.
+  function tokenize(source) {
     const tokens = [];
     let lineIndex = 0;
 
-    for (const match of matches) {
-      const lineNode = match.captures[0].node;
-      const currentLineNum = lineNode.startPosition.row + 1;
+    const lines = source.split('\n');
+    for (let row = 0; row < lines.length; row++) {
+      const words = lines[row].match(/[a-zA-Z]+/g);
+      if (!words) continue; // blank / word-less line — not a code line
+
+      const currentLineNum = row + 1;
       const expected = EXPECTED_METER[lineIndex % 3];
       let runningSyllables = 0;
 
-      for (let i = 0; i < lineNode.childCount; i++) {
-        const wordText = lineNode.child(i).text.toLowerCase();
+      for (const rawWord of words) {
+        const wordText = rawWord.toLowerCase();
 
         if (!VOCAB[wordText]) {
           throw new HaikuError(currentLineNum, `Forbidden word "${wordText}" is outside the allowable vocabulary dictionary.`);
@@ -301,11 +303,9 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 ```
 
 ## 5. Compiler Pipeline CLI (`haiku.js`)
-Node entry point. Owns the Tree-sitter frontend, file I/O, and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--json-errors`); delegates all compilation to the shared core.
+Node entry point. Owns file I/O and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--json-errors`); delegates all lexing and compilation to the shared core.
 ```javascript
 const fs = require('fs');
-const path = require('path');
-const Parser = require('web-tree-sitter');
 const { tokenize, parseProgram, generateWat, HaikuError } = require('./haiku-core');
 
 // Helper to handle standard logging vs structured JSON errors for the IDE extension
@@ -319,12 +319,6 @@ function emitError(jsonMode, line, message) {
 }
 
 async function runCompiler() {
-  // Initialize Tree-sitter WASM components
-  await Parser.init();
-  const parser = new Parser();
-  const Lang = await Parser.Language.load(path.join(__dirname, 'tree-sitter-haikuscript.wasm'));
-  parser.setLanguage(Lang);
-
   // Initialize WebAssembly Binary Toolkit (WABT) for inline machine assembly
   const wabt = await require('wabt')();
 
@@ -339,12 +333,11 @@ async function runCompiler() {
   }
 
   const sourceCode = fs.readFileSync(targetFile, 'utf8');
-  const tree = parser.parse(sourceCode);
 
-  // PHASE 1: Semantic Analysis (Syllable Auditing) — shared core, CLI-style reporting
+  // PHASE 1: Lex + Syllable Audit — shared core, CLI-style reporting
   let tokens;
   try {
-    tokens = tokenize(tree, Lang);
+    tokens = tokenize(sourceCode);
   } catch (err) {
     if (err instanceof HaikuError) emitError(jsonMode, err.line, err.message);
     throw err;
@@ -388,12 +381,11 @@ runCompiler();
 ```
 
 ## 6. Browser REPL Driver (`repl.js`)
-Runs the whole pipeline client-side: Tree-sitter (web build) parses the editor text, the shared core audits/parses/generates, WABT assembles WASM in-browser, and `WebAssembly.instantiate` executes it. Also wires up file open/save.
+Runs the whole pipeline client-side: the shared core lexes/audits/parses/generates from the editor text, WABT assembles WASM in-browser, and `WebAssembly.instantiate` executes it. Also wires up file open/save.
 ```javascript
 // HaikuScript browser REPL — runs the full compiler pipeline client-side.
 // Globals provided by the <script> tags in repl.html:
 //   HaikuCore    (haiku-core.js)
-//   TreeSitter   (web-tree-sitter/tree-sitter.js)
 //   WabtModule   (wabt/index.js)
 (function () {
   'use strict';
@@ -421,9 +413,7 @@ Runs the whole pipeline client-side: Tree-sitter (web build) parses the editor t
   const status = $('status');
   const fileName = $('fileName');
 
-  let parser = null;   // Tree-sitter parser (lazily initialised, reused across runs)
-  let Lang = null;     // Loaded HaikuScript grammar
-  let wabt = null;     // WABT instance
+  let wabt = null;     // WABT instance (lazily initialised, reused across runs)
   let fileHandle = null; // File System Access API handle, when available
 
   function setStatus(text, kind) {
@@ -431,19 +421,11 @@ Runs the whole pipeline client-side: Tree-sitter (web build) parses the editor t
     status.className = 'status' + (kind ? ' ' + kind : '');
   }
 
-  // Lazily boot the heavy WASM toolchains exactly once.
+  // Lazily boot the WABT assembler exactly once.
   async function ensureToolchain() {
-    if (parser && wabt) return;
-    setStatus('Booting Tree-sitter + WABT…', 'busy');
-    if (!parser) {
-      await TreeSitter.init({ locateFile: (name) => '/' + name });
-      parser = new TreeSitter();
-      Lang = await TreeSitter.Language.load('/tree-sitter-haikuscript.wasm');
-      parser.setLanguage(Lang);
-    }
-    if (!wabt) {
-      wabt = await WabtModule();
-    }
+    if (wabt) return;
+    setStatus('Booting WABT…', 'busy');
+    wabt = await WabtModule();
   }
 
   function highlightLine(line) {
@@ -468,9 +450,8 @@ Runs the whole pipeline client-side: Tree-sitter (web build) parses the editor t
       await ensureToolchain();
       const source = editor.value;
 
-      setStatus('Phase 1 — parsing & syllable audit…', 'busy');
-      const tree = parser.parse(source);
-      const tokens = HaikuCore.tokenize(tree, Lang);
+      setStatus('Phase 1 — lexing & syllable audit…', 'busy');
+      const tokens = HaikuCore.tokenize(source);
       $('tokens').textContent = JSON.stringify(tokens, null, 2);
 
       setStatus('Phase 2 — building AST…', 'busy');
@@ -597,7 +578,7 @@ Runs the whole pipeline client-side: Tree-sitter (web build) parses the editor t
 ```
 
 ## 7. Browser REPL Page (`repl.html`)
-Served at `/repl.html`. Loads the shared core, the two WASM toolchains (`web-tree-sitter`, `wabt`) straight out of `node_modules`, then the REPL driver.
+Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight out of `node_modules`, then the REPL driver.
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -685,9 +666,8 @@ Served at `/repl.html`. Loads the shared core, the two WASM toolchains (`web-tre
     </div>
   </div>
 
-  <!-- Shared compiler core, then the two WASM toolchains, then the REPL driver -->
+  <!-- Shared compiler core, then the WABT assembler, then the REPL driver -->
   <script src="/haiku-core.js"></script>
-  <script src="/node_modules/web-tree-sitter/tree-sitter.js"></script>
   <script src="/node_modules/wabt/index.js"></script>
   <script src="/repl.js"></script>
 </body>

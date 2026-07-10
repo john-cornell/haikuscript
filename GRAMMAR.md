@@ -12,24 +12,41 @@ The rest explains how the grammar works under the hood.
 
 ---
 
-## 1. The two layers of the grammar
+## 1. How the grammar is implemented
 
-1. **Structural grammar** — `grammar.js` (Tree-sitter). Splits raw text into
-   stanzas, lines, and words. It knows nothing about meaning.
-2. **Semantic grammar** — `haiku-core.js` (`VOCAB`, `tokenize`, `parseProgram`).
-   Audits syllables, maps words to their roles, and builds the program.
+The grammar is simple enough that it's **tokenized by hand** — there's no parser
+generator in the run path:
+
+1. **Lexer** — `haiku-core.js` (`tokenize`). Splits the source into lines and words
+   with a one-line regex, audits syllables, and maps each word to its role.
+2. **Parser + codegen** — `haiku-core.js` (`parseProgram`, `generateWat`). Builds the
+   AST and emits WebAssembly.
+
+> **Optional:** a Tree-sitter grammar (`grammar.js`) and query file
+> (`queries/highlights.scm`) are kept in the repo so an editor can syntax-highlight
+> `.hk` files. They are **not used to run or compile** — for a language this small a
+> generated parser is overkill. For a bigger language you'd let Tree-sitter own the
+> front end; the rules in `grammar.js` describe exactly the structure the hand lexer
+> reproduces.
 
 ---
 
 ## 2. The shape of a program
 
 - A **program** is a sequence of **stanzas**, optionally separated by blank lines.
-- A **stanza** is exactly **three lines**.
+- A **stanza** is **three lines**.
 - Each **line** is one or more **words**; a word is letters only (`/[a-zA-Z]+/`).
 - **Spaces and tabs don't matter; newlines do** — they end a line.
 - Every line is scored against a repeating meter, `5, 7, 5`, that cycles every three
   code lines. Each word has a fixed syllable count; a line's words must total exactly
   its target or you get `Poetic meter broken`. Blank lines are not code and are skipped.
+
+The hand lexer is essentially:
+
+```javascript
+source.split('\n')                    // one entry per physical line
+      .map(line => line.match(/[a-zA-Z]+/g) || [])   // words on that line
+```
 
 Numbers are spelled out (`zero`, `one`, `ten`) because digits aren't legal words.
 
@@ -151,8 +168,7 @@ After the syllable audit, the meaningful tokens are parsed into statements:
 
 ```
 source (.hk)
-  → Tree-sitter parse            (grammar.js: stanzas/lines/words)
-  → Phase 1  tokenize + audit    (VOCAB: syllable check, drop filler, emit tokens)
+  → Phase 1  tokenize + audit    (haiku-core: split lines/words, syllable check, emit tokens)
   → Phase 2  parseProgram        (tokens → statements)
   → Phase 3  generateWat         (statements → WebAssembly Text)
   → wabt                         (WAT → .wasm binary)
@@ -208,8 +224,6 @@ This computes the 10th Fibonacci number: **`compute()` → 55**.
 
 | Concern | File |
 | ------- | ---- |
-| Stanza / line / word structure | `grammar.js` |
-| Compiled grammar (loaded at runtime) | `tree-sitter-haikuscript.wasm` (built by `npm run build-parser`) |
+| Lexing (lines/words), syllable audit, parsing, code generation | `haiku-core.js` (`tokenize`, `parseProgram`, `generateWat`) |
 | Vocabulary, syllables, word roles | `haiku-core.js` (`VOCAB`) |
-| Syllable audit, parsing, code generation | `haiku-core.js` (`tokenize`, `parseProgram`, `generateWat`) |
-| Editor syntax highlighting | `queries/highlights.scm` |
+| Editor syntax highlighting *(optional, not used at runtime)* | `grammar.js` + `queries/highlights.scm` |

@@ -1,6 +1,4 @@
 const fs = require('fs');
-const path = require('path');
-const Parser = require('web-tree-sitter');
 const { tokenize, parseProgram, generateWat, HaikuError } = require('./haiku-core');
 
 // Helper to handle standard logging vs structured JSON errors for the IDE extension
@@ -14,12 +12,6 @@ function emitError(jsonMode, line, message) {
 }
 
 async function runCompiler() {
-  // Initialize Tree-sitter WASM components
-  await Parser.init();
-  const parser = new Parser();
-  const Lang = await Parser.Language.load(path.join(__dirname, 'tree-sitter-haikuscript.wasm'));
-  parser.setLanguage(Lang);
-
   // Initialize WebAssembly Binary Toolkit (WABT) for inline machine assembly
   const wabt = await require('wabt')();
 
@@ -34,12 +26,11 @@ async function runCompiler() {
   }
 
   const sourceCode = fs.readFileSync(targetFile, 'utf8');
-  const tree = parser.parse(sourceCode);
 
-  // PHASE 1: Semantic Analysis (Syllable Auditing) — shared core, CLI-style reporting
+  // PHASE 1: Lex + Syllable Audit — shared core, CLI-style reporting
   let tokens;
   try {
-    tokens = tokenize(tree, Lang);
+    tokens = tokenize(sourceCode);
   } catch (err) {
     if (err instanceof HaikuError) emitError(jsonMode, err.line, err.message);
     throw err;

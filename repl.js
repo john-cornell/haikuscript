@@ -1,7 +1,6 @@
 // HaikuScript browser REPL — runs the full compiler pipeline client-side.
 // Globals provided by the <script> tags in repl.html:
 //   HaikuCore    (haiku-core.js)
-//   TreeSitter   (web-tree-sitter/tree-sitter.js)
 //   WabtModule   (wabt/index.js)
 (function () {
   'use strict';
@@ -29,9 +28,7 @@
   const status = $('status');
   const fileName = $('fileName');
 
-  let parser = null;   // Tree-sitter parser (lazily initialised, reused across runs)
-  let Lang = null;     // Loaded HaikuScript grammar
-  let wabt = null;     // WABT instance
+  let wabt = null;     // WABT instance (lazily initialised, reused across runs)
   let fileHandle = null; // File System Access API handle, when available
 
   function setStatus(text, kind) {
@@ -39,19 +36,11 @@
     status.className = 'status' + (kind ? ' ' + kind : '');
   }
 
-  // Lazily boot the heavy WASM toolchains exactly once.
+  // Lazily boot the WABT assembler exactly once.
   async function ensureToolchain() {
-    if (parser && wabt) return;
-    setStatus('Booting Tree-sitter + WABT…', 'busy');
-    if (!parser) {
-      await TreeSitter.init({ locateFile: (name) => '/' + name });
-      parser = new TreeSitter();
-      Lang = await TreeSitter.Language.load('/tree-sitter-haikuscript.wasm');
-      parser.setLanguage(Lang);
-    }
-    if (!wabt) {
-      wabt = await WabtModule();
-    }
+    if (wabt) return;
+    setStatus('Booting WABT…', 'busy');
+    wabt = await WabtModule();
   }
 
   function highlightLine(line) {
@@ -76,9 +65,8 @@
       await ensureToolchain();
       const source = editor.value;
 
-      setStatus('Phase 1 — parsing & syllable audit…', 'busy');
-      const tree = parser.parse(source);
-      const tokens = HaikuCore.tokenize(tree, Lang);
+      setStatus('Phase 1 — lexing & syllable audit…', 'busy');
+      const tokens = HaikuCore.tokenize(source);
       $('tokens').textContent = JSON.stringify(tokens, null, 2);
 
       setStatus('Phase 2 — building AST…', 'busy');

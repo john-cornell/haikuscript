@@ -1,5 +1,5 @@
 (module
-  (global $rng (mut i32) (i32.const 1226523956))
+  (global $rng (mut i32) (i32.const 1236480744))
   (func $next_random (result i32) (local $s i32)
     global.get $rng local.set $s
     local.get $s local.get $s i32.const 13 i32.shl i32.xor local.set $s

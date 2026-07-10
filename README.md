@@ -2,7 +2,7 @@
 
 *Part of the HaikuScript docs: README (this file, how to build & run) · [GRAMMAR](GRAMMAR.md) (how to write the language) · [CODEBASE](CODEBASE.md) (full source).*
 
-Follow these sequential terminal procedures to build your ecosystem, test compliance, compile to WebAssembly, and load the live IDE diagnostic extension.
+Follow these procedures to set up, test the lexer/parser, compile to WebAssembly, run the live REPL, and load the IDE diagnostic extension.
 
 ---
 
@@ -16,29 +16,25 @@ This project uses the Node ecosystem, so there is no `requirements.txt`. The equ
 
 ### Verified build matrix
 
-| Tool / package                  | Pinned / range               | Verified version |
-| ------------------------------- | ---------------------------- | ---------------- |
-| Node.js                         | `>=20` (`.nvmrc`: `24.15.0`) | `24.15.0`        |
-| npm                             | `>=10`                       | `11.12.1`        |
-| tree-sitter-cli (devDependency) | `^0.26.10`                   | `0.26.10`        |
-| web-tree-sitter (dependency)    | `^0.20.8`                    | `0.20.8`         |
-| wabt (dependency)               | `^1.0.36`                    | `1.0.39`         |
-| serve (dependency)              | `^14.2.1`                    | `14.2.6`         |
+| Tool / package     | Pinned / range               | Verified version |
+| ------------------ | ---------------------------- | ---------------- |
+| Node.js            | `>=20` (`.nvmrc`: `24.15.0`) | `24.15.0`        |
+| npm                | `>=10`                       | `11.12.1`        |
+| wabt (dependency)  | `^1.0.36`                    | `1.0.39`         |
+| serve (dependency) | `^14.2.1`                    | `14.2.6`         |
 
-> **Why the split (CLI 0.26+, runtime `web-tree-sitter` 0.20.8):** the two do different jobs — the CLI only *builds* the grammar, the runtime *loads* it at parse time — so their versions are independent. The modern CLI compiles the grammar with a bundled **wasi-sdk** (no Docker/Emscripten, and it fixes the Windows `src\parser.c` path bug), emitting an **ABI 14** grammar that the 0.20.8 runtime loads happily.
->
-> The runtime stays on 0.20.8 **by design, not caution.** This project has no bundler — the REPL is served straight from `node_modules`, so it relies on web-tree-sitter 0.20.8's UMD build, which exposes a global via a plain `<script>` tag. Version 0.22+ is ESM-only with no global, which in a buildless setup would force an import map (or a bundler) plus a rewrite of `haiku.js` / `repl.js`. Upgrading is entirely possible — it just adds complexity here rather than removing it.
+> **No build step.** The lexer is plain JavaScript (`haiku-core.js`), so nothing has to be compiled ahead of time — `npm install` is the whole setup. The grammar is trivial (a line is a run of letter-words), so we tokenize by hand. A Tree-sitter grammar (`grammar.js`) and `queries/highlights.scm` are kept as an **optional** way to get editor syntax highlighting; they are **not** needed to run. (For a bigger language you'd let Tree-sitter generate the parser — here it's overkill.)
 
 > **This section is reference only — nothing to run here.** To set the project up, start at **Phase 1** below.
 >
 > - **First-time / fresh checkout** → `npm install` (Phase 1). Creates `node_modules` and `package-lock.json`.
-> - **Later, exact reinstall from an existing lockfile** (CI, reproducible rebuild) → `npm ci`. Fails if there is no `package-lock.json`, so it is **not** for a fresh folder.
+> - **Later, exact reinstall from an existing lockfile** (CI, reproducible rebuild) → `npm ci`.
 
 ---
 
 ## 📦 Phase 1: Environment Assembly
 
-**Start here.** Run this sequence within your main workspace directory (`C:\Code\Fizzbash\haikuscript`) to establish dependencies and align binaries:
+**Start here.** Run this within your workspace directory (`C:\Code\Fizzbash\haikuscript`):
 
 ```powershell
 # 0. Check Node. Need 20 or newer.
@@ -48,78 +44,62 @@ node -v
 #     nvm install 24.15.0
 #     nvm use 24.15.0
 
-# 1. Pull down project dependencies (creates node_modules + package-lock.json)
+# 1. Install dependencies (creates node_modules + package-lock.json)
 npm install
-
-# 2. Duplicate the raw WASM driver into your root execution vector
-cp node_modules/web-tree-sitter/tree-sitter.wasm .
 ```
+
+That's the entire setup — there is no parser/grammar to build.
 
 ---
 
-## 🛠️ Phase 2: Compiler Build Engine
+## 🧪 Phase 2: Diagnostic Validation Checks
 
-Execute the custom Tree-sitter CLI pipeline to downcompile structural text grammar blocks into native layout artifacts:
-
-```powershell
-# Compiles grammar.js and builds the cached standalone wasi-sdk local environment
-npm run build-parser
-```
-
-> **Verification Check:** Confirm that a raw architecture file titled `tree-sitter-haikuscript.wasm` manifests inside your project root.
->
-> **Expected warning:** `No tree-sitter.json file found … Using ABI version 14 instead.` This is fine — **leave it**. ABI 14 is what the pinned `web-tree-sitter` 0.20.8 runtime loads; adding `tree-sitter.json` to force ABI 15 would make the grammar fail to load. The first `build --wasm` also downloads wasi-sdk once (no Docker/Emscripten required).
-
----
-
-## 🧪 Phase 3: Diagnostic Validation Checks
-
-Run these execution checks to inspect how the frontend lexer and parser process unpunctuated poetical logic structures:
+Inspect how the hand-written lexer and the recursive parser process the poetry:
 
 ```powershell
 # Check 1: Extract and audit structured vocabulary tokens
 npm run tokens
 
-# Check 2: Parse tokens into an abstract hierarchical syntax tree (AST)
+# Check 2: Parse tokens into an abstract syntax tree (AST)
 npm run ast
 ```
 
 ---
 
-## 🚀 Phase 4: WebAssembly Code Generation & Execution
+## 🚀 Phase 3: WebAssembly Code Generation & Execution
 
-Map your poetical syntax structures into explicit browser-executable bin-code payloads:
+Compile the poem into browser-executable bytecode and serve it:
 
 ```powershell
 # 1. Compile source logic directly into .wat and .wasm blocks
 npm run compile
 
-# 2. Boot up a local static server asset pipeline
-npx serve .
+# 2. Boot up a local static server
+npm run serve
 ```
 
 ### Browser Execution Verification
 
-1. Open your web browser to the port generated by the terminal (typically `http://localhost:3000`).
-2. Press **F12** or right-click and choose **Inspect** to reveal the developer console.
+1. Open your web browser to the port the terminal prints (typically `http://localhost:3000`).
+2. Press **F12** or right-click → **Inspect** to reveal the developer console.
 3. Refresh the tab. The page renders the outcome on screen in a green result box — **`Result: 55`** — and also logs to the console:
    `[HaikuScript Result Processed]: 55`
 
 ---
 
-## 🎡 Phase 4b: Interactive Browser REPL
+## 🎡 Phase 3b: Interactive Browser REPL
 
-The static server from Phase 4 also serves a full REPL. Unlike the single-shot sandbox (which just replays a pre-built `fibonacci.wasm`), the REPL runs **every** stage live in the browser — no server-side compile step.
+The static server from Phase 3 also serves a full REPL that runs **every** stage live in the browser — no server-side step.
 
 ```powershell
-# (Same server as Phase 4 — start it if it isn't already running)
+# (Same server as Phase 3 — start it if it isn't already running)
 npm run serve
 ```
 
 Then open **`http://localhost:3000/repl.html`**.
 
 - **Edit on screen** — type HaikuScript into the editor and press **Run** (or **Ctrl + Enter**).
-- The page runs the whole pipeline client-side: Tree-sitter parse → syllable audit → AST → WAT → WASM → execute, showing the **Tokens**, **AST**, **WAT**, and final **Result** panels.
+- The page runs the whole pipeline client-side: lex → syllable audit → AST → WAT → WASM → execute, showing the **Tokens**, **AST**, **WAT**, and final **Result** panels.
 - **Errors** surface with the offending line number and highlight that line in the editor.
 - **Open… / Save / Save As…** use the browser File System Access API (Chrome/Edge). On other browsers these fall back to a file picker + download automatically.
 
@@ -131,13 +111,13 @@ Dream the x beautifully
 Quietly it is
 ```
 
-> How it works: `repl.html` loads the shared compiler core (`haiku-core.js`) plus the browser builds of `web-tree-sitter` and `wabt` straight from `node_modules/`. The CLI (`haiku.js`) and the REPL share the exact same core, so they can never disagree.
+> How it works: `repl.html` loads the shared compiler core (`haiku-core.js`) plus the browser build of `wabt` straight from `node_modules/`. The CLI (`haiku.js`) and the REPL share the exact same core, so they can never disagree.
 
 ---
 
-## 🎨 Phase 5: Side-loading the Live IDE Extension Sandbox
+## 🎨 Phase 4: Side-loading the Live IDE Extension Sandbox
 
-To activate live syntax checking and real-time red squiggly lines inside your development environment, pass your exact absolute project destination path to the VS Code runtime instance:
+To activate live syntax checking inside VS Code, pass your absolute project path to the runtime instance:
 
 ```powershell
 code --extensionDevelopmentPath="C:\Code\Fizzbash\haikuscript" fibonacci.hk
@@ -145,10 +125,10 @@ code --extensionDevelopmentPath="C:\Code\Fizzbash\haikuscript" fibonacci.hk
 
 ### Live Stage Gimmick Test Strategy
 
-1. Look at the bottom-right bar of the new window. It will display **HaikuScript** as an explicitly recognized, native language mode.
-2. Intentionally create an absolute grammar violation on line 7 (e.g., change `Set z to the x` to `Set z to the x errorme`).
+1. Look at the bottom-right bar of the new window. It will display **HaikuScript** as an explicitly recognized language mode.
+2. Intentionally create a grammar violation on line 7 (e.g., change `Set z to the x` to `Set z to the x errorme`).
 3. Press **Ctrl + S** to save the file.
-4. The background compiler bridge immediately awakens, audits your syllable structure, and casts a **red syntax error squiggly** right underneath your modified line!
+4. The background compiler bridge (`node haiku.js --json-errors`) immediately awakens, audits your syllable structure, and casts a **red syntax error squiggly** right underneath your modified line!
 
 ---
 

@@ -45,24 +45,27 @@
     }
   }
 
-  // PHASE 1: Semantic Analysis (Syllable Auditing).
-  // Takes a parsed Tree-sitter `tree` plus its `Lang` (same object shape in Node
-  // and browser web-tree-sitter) and returns the token stream. Throws HaikuError.
-  function tokenize(tree, Lang) {
-    const query = Lang.query('(line) @line');
-    const matches = query.matches(tree.rootNode);
-
+  // PHASE 1: Lexing + Semantic Analysis (Syllable Auditing).
+  // The grammar is trivial — a line is a run of letter-words — so we tokenize by
+  // hand instead of pulling in a parser. (A Tree-sitter grammar, `grammar.js`, is
+  // kept alongside as an optional source of editor highlighting; it is NOT used at
+  // runtime.) Each non-blank source line is one code line, checked against the
+  // repeating 5/7/5 meter. Returns the token stream. Throws HaikuError.
+  function tokenize(source) {
     const tokens = [];
     let lineIndex = 0;
 
-    for (const match of matches) {
-      const lineNode = match.captures[0].node;
-      const currentLineNum = lineNode.startPosition.row + 1;
+    const lines = source.split('\n');
+    for (let row = 0; row < lines.length; row++) {
+      const words = lines[row].match(/[a-zA-Z]+/g);
+      if (!words) continue; // blank / word-less line — not a code line
+
+      const currentLineNum = row + 1;
       const expected = EXPECTED_METER[lineIndex % 3];
       let runningSyllables = 0;
 
-      for (let i = 0; i < lineNode.childCount; i++) {
-        const wordText = lineNode.child(i).text.toLowerCase();
+      for (const rawWord of words) {
+        const wordText = rawWord.toLowerCase();
 
         if (!VOCAB[wordText]) {
           throw new HaikuError(currentLineNum, `Forbidden word "${wordText}" is outside the allowable vocabulary dictionary.`);
