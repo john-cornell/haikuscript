@@ -25,7 +25,9 @@ This project uses the Node ecosystem, so there is no `requirements.txt`. The equ
 | wabt (dependency)               | `^1.0.36`                    | `1.0.39`         |
 | serve (dependency)              | `^14.2.1`                    | `14.2.6`         |
 
-> **Why the CLI is 0.26+ but web-tree-sitter stays 0.20.8:** the modern tree-sitter CLI compiles the grammar to WASM with a bundled **wasi-sdk** — no Docker or Emscripten, and it normalises paths so the Windows `src\parser.c` build bug is gone. It emits an **ABI 14** grammar, which is exactly what the 0.20.8 runtime loads. Do **not** upgrade `web-tree-sitter` — its 0.22+ API differs and would break `haiku.js` / `repl.js`.
+> **Why the split (CLI 0.26+, runtime `web-tree-sitter` 0.20.8):** the two do different jobs — the CLI only *builds* the grammar, the runtime *loads* it at parse time — so their versions are independent. The modern CLI compiles the grammar with a bundled **wasi-sdk** (no Docker/Emscripten, and it fixes the Windows `src\parser.c` path bug), emitting an **ABI 14** grammar that the 0.20.8 runtime loads happily.
+>
+> The runtime stays on 0.20.8 **by design, not caution.** This project has no bundler — the REPL is served straight from `node_modules`, so it relies on web-tree-sitter 0.20.8's UMD build, which exposes a global via a plain `<script>` tag. Version 0.22+ is ESM-only with no global, which in a buildless setup would force an import map (or a bundler) plus a rewrite of `haiku.js` / `repl.js`. Upgrading is entirely possible — it just adds complexity here rather than removing it.
 
 > **This section is reference only — nothing to run here.** To set the project up, start at **Phase 1** below.
 >
