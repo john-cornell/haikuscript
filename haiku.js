@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { tokenize, parseProgram, generateWat, HaikuError } = require('./haiku-core');
 
 // Helper to handle standard logging vs structured JSON errors for the IDE extension
@@ -64,16 +65,23 @@ async function runCompiler() {
   if (flag === '--compile') {
     const fullWat = generateWat(ast, Date.now());
 
+    // Build output is kept separate from source — never alongside the .hk file.
+    const buildDir = 'build';
+    fs.mkdirSync(buildDir, { recursive: true });
+    const baseName = path.basename(targetFile, '.hk');
+    const watPath = path.join(buildDir, `${baseName}.wat`);
+    const wasmPath = path.join(buildDir, `${baseName}.wasm`);
+
     // Write out the human-readable WebAssembly Text Blueprint
-    fs.writeFileSync(targetFile.replace('.hk', '.wat'), fullWat);
-    console.log(`\x1b[32mSuccessfully compiled to WebAssembly Text (.wat)!\x1b[0m`);
+    fs.writeFileSync(watPath, fullWat);
+    console.log(`\x1b[32mSuccessfully compiled to WebAssembly Text (${watPath})!\x1b[0m`);
 
     // Compile directly into native browser-executable WASM binary bytes using WABT
     try {
       const wasmModule = wabt.parseWat(targetFile, fullWat);
       const { buffer } = wasmModule.toBinary({});
-      fs.writeFileSync(targetFile.replace('.hk', '.wasm'), Buffer.from(buffer));
-      console.log(`\x1b[32mSuccessfully assembled to WebAssembly Binary (.wasm)!\x1b[0m`);
+      fs.writeFileSync(wasmPath, Buffer.from(buffer));
+      console.log(`\x1b[32mSuccessfully assembled to WebAssembly Binary (${wasmPath})!\x1b[0m`);
     } catch (wasmErr) {
       console.error(`\x1b[31mAssembly Error: ${wasmErr.message}\x1b[0m`);
     }

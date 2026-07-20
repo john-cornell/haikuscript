@@ -460,9 +460,10 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 ```
 
 ## 5. Compiler Pipeline CLI (`haiku.js`)
-Node entry point. Owns file I/O and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--run`, `--json-errors`); delegates all lexing and compilation to the shared core. `--run` assembles the WAT to WASM and executes it immediately, supplying `console.log` as the `env.print` host import so `PrintStatement`s surface mid-run.
+Node entry point. Owns file I/O and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--run`, `--json-errors`); delegates all lexing and compilation to the shared core. `--run` assembles the WAT to WASM and executes it immediately, supplying `console.log` as the `env.print` host import so `PrintStatement`s surface mid-run. `--compile` writes its `.wat`/`.wasm` output to `build/` — kept separate from the `.hk` sources under `src/` regardless of the input file's own location.
 ```javascript
 const fs = require('fs');
+const path = require('path');
 const { tokenize, parseProgram, generateWat, HaikuError } = require('./haiku-core');
 
 // Helper to handle standard logging vs structured JSON errors for the IDE extension
@@ -528,16 +529,23 @@ async function runCompiler() {
   if (flag === '--compile') {
     const fullWat = generateWat(ast, Date.now());
 
+    // Build output is kept separate from source — never alongside the .hk file.
+    const buildDir = 'build';
+    fs.mkdirSync(buildDir, { recursive: true });
+    const baseName = path.basename(targetFile, '.hk');
+    const watPath = path.join(buildDir, `${baseName}.wat`);
+    const wasmPath = path.join(buildDir, `${baseName}.wasm`);
+
     // Write out the human-readable WebAssembly Text Blueprint
-    fs.writeFileSync(targetFile.replace('.hk', '.wat'), fullWat);
-    console.log(`\x1b[32mSuccessfully compiled to WebAssembly Text (.wat)!\x1b[0m`);
+    fs.writeFileSync(watPath, fullWat);
+    console.log(`\x1b[32mSuccessfully compiled to WebAssembly Text (${watPath})!\x1b[0m`);
 
     // Compile directly into native browser-executable WASM binary bytes using WABT
     try {
       const wasmModule = wabt.parseWat(targetFile, fullWat);
       const { buffer } = wasmModule.toBinary({});
-      fs.writeFileSync(targetFile.replace('.hk', '.wasm'), Buffer.from(buffer));
-      console.log(`\x1b[32mSuccessfully assembled to WebAssembly Binary (.wasm)!\x1b[0m`);
+      fs.writeFileSync(wasmPath, Buffer.from(buffer));
+      console.log(`\x1b[32mSuccessfully assembled to WebAssembly Binary (${wasmPath})!\x1b[0m`);
     } catch (wasmErr) {
       console.error(`\x1b[31mAssembly Error: ${wasmErr.message}\x1b[0m`);
     }
@@ -902,7 +910,7 @@ module.exports = { activate, deactivate };
 ```
 
 ## 9. Web Sandbox Test Harness (`index.html`)
-A minimal single-shot page that fetches the pre-compiled `src/fibonacci.wasm` (built by `npm run compile`, which now writes its `.wat`/`.wasm` output alongside the moved `.hk` sources) and renders the result on screen (and to the console).
+A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` (built by `npm run compile`, which writes its `.wat`/`.wasm` output to `build/` — separate from the `.hk` sources under `src/`) and renders the result on screen (and to the console).
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -934,7 +942,7 @@ A minimal single-shot page that fetches the pre-compiled `src/fibonacci.wasm` (b
     async function loadPoemExecution() {
       const output = document.getElementById('result');
       try {
-        const serverResponse = await fetch('src/fibonacci.wasm');
+        const serverResponse = await fetch('build/fibonacci.wasm');
         const compiledInstance = await WebAssembly.instantiate(await serverResponse.arrayBuffer());
         const calculationResult = compiledInstance.instance.exports.compute();
 

@@ -28,7 +28,7 @@
     async function loadPoemExecution() {
       const output = document.getElementById('result');
       try {
-        const serverResponse = await fetch('src/fibonacci.wasm');
+        const serverResponse = await fetch('build/fibonacci.wasm');
         const compiledInstance = await WebAssembly.instantiate(await serverResponse.arrayBuffer());
         const calculationResult = compiledInstance.instance.exports.compute();
 

@@ -4,5 +4,4 @@ node_modules/
 repomix*
 
 # Generated build outputs (produced by `npm run compile`)
-*.wat
-*.wasm
+build/
