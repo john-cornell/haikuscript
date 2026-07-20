@@ -119,6 +119,8 @@ Quietly it is
 
 **Reading input** goes the other way — pulling a value in from whoever's running the program. Any of `ask` / `guess` / `prompt` (1 syl) or `input` (2 syl) works, either as a verb (`Guess the g`) or in assignment form (`Set g to input`). The filler word `user` exists so you can write `Ask user the g` if it reads better. In the CLI this blocks on a synchronous stdin read (prompts `Input: ` on each call); in the REPL it uses `window.prompt`. There's no character type — values are plain numbers, so reading an actual letter means agreeing on an encoding (e.g. `1`–`26` for A–Z) rather than typing the letter itself.
 
+**String literals** solve a related problem: a multi-letter word like `cat` has no reliable syllable count the lexer can work out on its own — general English syllable counting is genuinely ambiguous, unlike the letter/digit spoken-names above. So you supply it explicitly: `"cat{1}"` — quoted word, brace-count, trusted outright. Up to 4 letters get packed into a single number (one byte per character), so it slots into the exact same `NUMBER` token everything else already uses — no parser or codegen changes needed, purely a lexer trick. The catch: there's no way to unpack individual letters back out (no bitwise ops in the language), so it's good for whole-value comparisons (`Set the secret to "cat{1}"`, then compare a whole guess against it) rather than a classic letter-by-letter reveal.
+
 > How it works: `repl.html` loads the shared compiler core (`haiku-core.js`) plus the browser build of `wabt` straight from `node_modules/`. The CLI (`haiku.js`) and the REPL share the exact same core, so they can never disagree.
 
 ---

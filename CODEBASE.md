@@ -164,6 +164,20 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
   // units table below — same underlying fact, one source of truth.
   const DIGIT_NAME_SYLLABLES = [2, 1, 1, 1, 1, 1, 1, 2, 1, 1]; // 0-9, "zero".."nine"
   const IDENTIFIER_SHAPE = /^[a-z][a-z0-9]?$/;
+  // "text{N}" — a word the lexer can't syllable-count on its own (arbitrary
+  // English is ambiguous), so the author trusts an explicit count instead.
+  // Packs up to 4 ASCII bytes into one i32 — reuses the NUMBER token type,
+  // so parser/codegen need no changes at all; this is a lexer-only feature.
+  const STRING_LITERAL_SHAPE = /^"([a-z]+)\{([0-9]+)\}"$/;
+  const MAX_STRING_LITERAL_LENGTH = 4;
+
+  function packStringLiteral(text) {
+    let value = 0;
+    for (const ch of text) {
+      value = (value << 8) | ch.charCodeAt(0);
+    }
+    return value;
+  }
 
   function getIdentifierSyllables(name) {
     let count = 0;
@@ -262,7 +276,7 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     const lines = source.split('\n');
     for (let row = 0; row < lines.length; row++) {
       const cleanLine = lines[row].replace(/,/g, '');
-      const words = cleanLine.match(/[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g);
+      const words = cleanLine.match(/"[a-zA-Z]+\{[0-9]+\}"|[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g);
       if (!words) continue; // blank / word-less line — not a code line
 
       const currentLineNum = row + 1;
@@ -271,6 +285,18 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 
       for (const rawWord of words) {
         const wordText = rawWord.toLowerCase();
+
+        const stringMatch = STRING_LITERAL_SHAPE.exec(wordText);
+        if (stringMatch) {
+          const text = stringMatch[1];
+          const syll = parseInt(stringMatch[2], 10);
+          if (text.length > MAX_STRING_LITERAL_LENGTH) {
+            throw new HaikuError(currentLineNum, `String literal "${text}" is too long — max ${MAX_STRING_LITERAL_LENGTH} characters (packs into one i32).`);
+          }
+          runningSyllables += syll;
+          tokens.push({ type: "NUMBER", value: packStringLiteral(text), line: currentLineNum });
+          continue;
+        }
 
         if (/^[0-9]+$/.test(wordText)) {
           const val = parseInt(wordText, 10);
@@ -405,7 +431,12 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     } else if (node.type === "InputStatement") {
       names.add(node.target);
     } else if (node.type === "WhileLoopStatement") {
-      names.add(node.condition.left);
+      // Either side of the condition can be a variable or a number literal —
+      // every existing example only ever compared a var to a fixed number, so
+      // this was never exercised, but "loop until g equals s" (two variables)
+      // is exactly what a real program (e.g. a guess-vs-secret check) needs.
+      if (typeof node.condition.left === 'string') names.add(node.condition.left);
+      if (typeof node.condition.right === 'string') names.add(node.condition.right);
       node.body.forEach(child => collectIdentifiers(child, names));
     }
   }
@@ -445,7 +476,9 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       if (node.type === "WhileLoopStatement") {
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
-        out += `${indent}local.get $${node.condition.left}\n${indent}i32.const ${node.condition.right}\n${indent}i32.eq\n${indent}br_if 1\n`;
+        let l = typeof node.condition.left === 'number' ? `i32.const ${node.condition.left}` : `local.get $${node.condition.left}`;
+        let r = typeof node.condition.right === 'number' ? `i32.const ${node.condition.right}` : `local.get $${node.condition.right}`;
+        out += `${indent}${l}\n${indent}${r}\n${indent}i32.eq\n${indent}br_if 1\n`;
         node.body.forEach(c => { out += walk(c); });
         out += `${indent}br 0\n`;
         indent = indent.substring(0, indent.length - 2);
@@ -1017,7 +1050,7 @@ A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` 
 ```
 
 ## 10. Source Poetry Input Code (`src/fibonacci.hk`)
-All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), and `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`).
+All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), `string_literal_demo.hk` (packs `"cat{1}"` into a number via the `"text{N}"` string-literal syntax in §4, prints it alongside a guess read via `INPUT`), and `hangman.hk` (a minimal guess-the-word game combining all of the above — `loop until g equals s` keeps reading guesses until one matches the packed secret word, then prints the winning guess and how many tries it took).
 ```text
 Set x to zero
 Set y to one quietly
