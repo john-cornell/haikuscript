@@ -122,7 +122,7 @@ Quietly it is
 To activate live syntax checking inside VS Code, pass your absolute project path to the runtime instance:
 
 ```powershell
-code --extensionDevelopmentPath="C:\Code\Fizzbash\haikuscript" fibonacci.hk
+code --extensionDevelopmentPath="C:\Code\Fizzbash\haikuscript" src\fibonacci.hk
 ```
 
 ### Live Stage Gimmick Test Strategy

@@ -27,9 +27,9 @@
     ]
   },
   "scripts": {
-    "tokens": "node haiku.js --dump-tokens fibonacci.hk",
-    "ast": "node haiku.js --dump-ast fibonacci.hk",
-    "compile": "node haiku.js --compile fibonacci.hk",
+    "tokens": "node haiku.js --dump-tokens src/fibonacci.hk",
+    "ast": "node haiku.js --dump-ast src/fibonacci.hk",
+    "compile": "node haiku.js --compile src/fibonacci.hk",
     "serve": "serve .",
     "repl": "serve ."
   },
