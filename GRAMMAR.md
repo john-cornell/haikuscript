@@ -37,8 +37,7 @@ generator in the run path:
 - A **stanza** is **three lines**.
 - Each **line** is one or more **words**; a word is either a run of 3+ letters (a
   dictionary word), a 1-2 character alpha-first token (a short variable name, see
-  §3a), a run of digits (a number literal), or a quoted `"text{N}"` string literal
-  with an explicit, trusted syllable count (see §3a).
+  §3a), or a run of digits (a number literal).
 - **Spaces and tabs don't matter; newlines do** — they end a line. Commas are
   stripped too, so you can punctuate a line for readability if you like.
 - Every line is scored against a repeating meter, `5, 7, 5`, that cycles every three
@@ -50,7 +49,7 @@ The hand lexer is essentially:
 ```javascript
 source.split('\n')                                               // one entry per physical line
       .map(line => line.replace(/,/g, ''))
-      .map(line => line.match(/"[a-zA-Z]+\{[0-9]+\}"|[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g) || [])   // words on that line
+      .map(line => line.match(/[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g) || [])   // words on that line
 ```
 
 Numbers can be spelled out (`zero`, `one`, `ten`, …) or written as digits directly
@@ -89,23 +88,6 @@ from how the name is *spoken*: each character is read as a letter or digit name
 (`w` = "double-u" = 3 syllables, `3` = "three" = 1 syllable), so `r3` = 2 syllables
 and `ww` = 6. This is an exact lookup table, not a guess — every letter A-Z and
 digit 0-9 has one fixed, unambiguous spoken-syllable count.
-
-**String literals** solve a different problem: an arbitrary multi-letter *word* —
-`cat`, `hangman`, anything not already in the dictionary — has no reliable syllable
-count the lexer can compute on its own (general English syllable counting is
-genuinely ambiguous, unlike single letters/digits above). So instead of guessing,
-you tell it: `"text{N}"` — quoted word, brace-count, no space anywhere inside. The
-lexer trusts `N` outright and doesn't touch the letters at all beyond packing them.
-Up to 4 letters are packed into a single `i32` (one byte per ASCII character) — so
-`"cat{1}"` and `"dog{1}"` become two different plain numbers, usable exactly like
-any other number literal (assign it, print it, add it, compare it in a loop
-condition). This is a **pure lexer feature**: it's tokenized as an ordinary `NUMBER`
-token, so the parser and code generator need no changes at all. The trade-off:
-there's no way to pull individual letters back out of the packed number (no
-bitwise/shift ops in the language), so a string literal supports whole-value
-equality only — useful for "does the whole guess match the whole secret word," not
-classic letter-by-letter reveal (which still needs one variable per letter
-position, as described in §6).
 
 ### 3b. The line patterns
 
@@ -175,7 +157,7 @@ Every word must appear here or you get
 | `EQ`         | `equals` (2)                                                                                                  | equality in a loop condition |
 | `END`        | `end` (1)                                                                                                     | close a loop body |
 | `IDENTIFIER` | `x` `y` `z` `count` (1 each, fixed dictionary entries), **or** any 1-2 character alpha-first name — syllables computed from its spoken letters/digits (see §3a) | a variable |
-| `NUMBER`     | spelled (`zero` = 2 → 0, `one` = 1 → 1, `ten` = 1 → 10, …), digits (`0`, `42`, …) — syllables computed algorithmically for any magnitude — **or** a string literal `"text{N}"` (up to 4 letters, packed into one `i32`, syllable count trusted as `N`, see §3a) | integer literals |
+| `NUMBER`     | spelled (`zero` = 2 → 0, `one` = 1 → 1, `ten` = 1 → 10, …), **or** digits (`0`, `42`, …) — syllables computed algorithmically for any magnitude | integer literals |
 | `RANDOM`     | `dream` (1), `random` (2), `something` (2), `imagine` (3), `randomly` (3)                                      | roll a random 0–99 |
 | `PRINT`      | `print` `say` `speak` `shout` (1), `printout` `announce` `declare` `reveal` `utter` `recite` (2), `vocalize` (3), `articulate` (4) | surface a value mid-run (see §5) |
 | `INPUT`      | `ask` `guess` `prompt` (1), `input` (2)                                                                       | read a value in from the host (see §5) |
@@ -215,12 +197,9 @@ After the syllable audit, the meaningful tokens are parsed into statements:
 
 - **Only addition** — no subtract, multiply, divide, or modulo in the language.
 - **Equality-only loops** — the single loop condition is `equals`; no `<`, `>`, `!=`.
-- **No real strings or arrays** — every variable is a single `i32` number. String
-  literals (`"text{N}"`, §3a) pack up to 4 letters into one number for whole-value
-  comparison, but there's no way to extract individual characters back out (no
-  bitwise/shift ops). Representing a word letter-by-letter — for something like a
-  hangman-style reveal — still needs one variable per letter position, each holding
-  a numeric code, not a string.
+- **No strings or arrays** — every variable is a single `i32` number. A word or a
+  sequence of guessed letters can't be represented directly; you'd need one
+  variable per letter position, encoded as a number.
 - **Variables aren't a fixed list anymore**: `x`, `y`, `z`, `count`, plus any 1-2
   character alpha-first name — but there's still only **one return value**, `x`.
 - **Randomness and input are the exceptions** to "only addition and one return
@@ -289,10 +268,11 @@ This computes the 10th Fibonacci number: **`compute()` → 55**.
 
 More worked examples live under `src/`: `named_vars.hk` and `syllable_check.hk`
 (short variable names), `ten_randoms.hk` (`print` inside a loop), `input_demo.hk`
-(all four `INPUT` keywords, plus the `ask user` filler phrase), `string_literal_demo.hk`
-(packs `"cat{1}"` into a number, prints it alongside a guess read via `INPUT`), and
-`hangman.hk` (a minimal guess-the-word game — `loop until g equals s` keeps asking
-for a guess until it matches the packed secret, then reports how many tries it took).
+(all four `INPUT` keywords, plus the `ask user` filler phrase), and
+`guess_number.hk` (a minimal guessing game — `loop until g equals s` keeps reading
+guesses until one matches a random secret, then reports how many tries it took).
+Note there's no `<`/`>` in the language, only `equals`, so this can't give
+higher/lower hints — it's "keep guessing," not a classic number-guessing game.
 
 ---
 
