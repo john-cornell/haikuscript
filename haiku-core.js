@@ -56,6 +56,20 @@
   // units table below — same underlying fact, one source of truth.
   const DIGIT_NAME_SYLLABLES = [2, 1, 1, 1, 1, 1, 1, 2, 1, 1]; // 0-9, "zero".."nine"
   const IDENTIFIER_SHAPE = /^[a-z][a-z0-9]?$/;
+  // "text{N}" — a word the lexer can't syllable-count on its own (arbitrary
+  // English is ambiguous), so the author trusts an explicit count instead.
+  // Packs up to 4 ASCII bytes into one i32 — reuses the NUMBER token type,
+  // so parser/codegen need no changes at all; this is a lexer-only feature.
+  const STRING_LITERAL_SHAPE = /^"([a-z]+)\{([0-9]+)\}"$/;
+  const MAX_STRING_LITERAL_LENGTH = 4;
+
+  function packStringLiteral(text) {
+    let value = 0;
+    for (const ch of text) {
+      value = (value << 8) | ch.charCodeAt(0);
+    }
+    return value;
+  }
 
   function getIdentifierSyllables(name) {
     let count = 0;
@@ -154,7 +168,7 @@
     const lines = source.split('\n');
     for (let row = 0; row < lines.length; row++) {
       const cleanLine = lines[row].replace(/,/g, '');
-      const words = cleanLine.match(/[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g);
+      const words = cleanLine.match(/"[a-zA-Z]+\{[0-9]+\}"|[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g);
       if (!words) continue; // blank / word-less line — not a code line
 
       const currentLineNum = row + 1;
@@ -163,6 +177,18 @@
 
       for (const rawWord of words) {
         const wordText = rawWord.toLowerCase();
+
+        const stringMatch = STRING_LITERAL_SHAPE.exec(wordText);
+        if (stringMatch) {
+          const text = stringMatch[1];
+          const syll = parseInt(stringMatch[2], 10);
+          if (text.length > MAX_STRING_LITERAL_LENGTH) {
+            throw new HaikuError(currentLineNum, `String literal "${text}" is too long — max ${MAX_STRING_LITERAL_LENGTH} characters (packs into one i32).`);
+          }
+          runningSyllables += syll;
+          tokens.push({ type: "NUMBER", value: packStringLiteral(text), line: currentLineNum });
+          continue;
+        }
 
         if (/^[0-9]+$/.test(wordText)) {
           const val = parseInt(wordText, 10);
