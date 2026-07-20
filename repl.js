@@ -60,6 +60,7 @@
     $('tokens').textContent = '';
     $('ast').textContent = '';
     $('wat').textContent = '';
+    $('printed').textContent = '';
 
     try {
       await ensureToolchain();
@@ -79,9 +80,12 @@
 
       const module = wabt.parseWat('repl.wat', wat);
       const { buffer } = module.toBinary({});
-      const { instance } = await WebAssembly.instantiate(buffer);
+      const printed = [];
+      const importObject = { env: { print: (v) => printed.push(v) } };
+      const { instance } = await WebAssembly.instantiate(buffer, importObject);
 
       const value = instance.exports.compute();
+      $('printed').textContent = printed.length ? printed.join('\n') : '(none)';
       $('result').textContent = 'Result: ' + value;
       $('result').className = 'result ok';
       setStatus('Done ✓', 'ok');

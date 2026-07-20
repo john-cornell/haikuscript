@@ -50,7 +50,17 @@ async function runCompiler() {
     process.exit(0);
   }
 
-  // PHASE 3: Code Generation & Automated Binary Assembly
+  // PHASE 3: Code Generation, Assembly, and (for --run) Execution
+  if (flag === '--run') {
+    const fullWat = generateWat(ast, Date.now());
+    const wasmModule = wabt.parseWat(targetFile, fullWat);
+    const { buffer } = wasmModule.toBinary({});
+    const importObject = { env: { print: (v) => console.log('Print:', v) } };
+    const { instance } = await WebAssembly.instantiate(buffer, importObject);
+    console.log('Result:', instance.exports.compute());
+    process.exit(0);
+  }
+
   if (flag === '--compile') {
     const fullWat = generateWat(ast, Date.now());
 

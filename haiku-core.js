@@ -30,10 +30,37 @@
     "telling": { syllables: 2, type: "IGNORE" }, "sequence": { syllables: 3, type: "IGNORE" },
     "dream": { syllables: 1, type: "RANDOM" }, "imagine": { syllables: 3, type: "RANDOM" },
     "random": { syllables: 2, type: "RANDOM" }, "randomly": { syllables: 3, type: "RANDOM" },
-    "something": { syllables: 2, type: "RANDOM" }
+    "something": { syllables: 2, type: "RANDOM" },
+    "print": { syllables: 1, type: "PRINT" }, "say": { syllables: 1, type: "PRINT" },
+    "speak": { syllables: 1, type: "PRINT" }, "shout": { syllables: 1, type: "PRINT" },
+    "printout": { syllables: 2, type: "PRINT" }, "announce": { syllables: 2, type: "PRINT" },
+    "declare": { syllables: 2, type: "PRINT" }, "reveal": { syllables: 2, type: "PRINT" },
+    "utter": { syllables: 2, type: "PRINT" }, "recite": { syllables: 2, type: "PRINT" },
+    "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" }
   };
 
   const EXPECTED_METER = [5, 7, 5];
+
+  // BASIC-style short variable names (1-2 chars, alpha-first): syllables come from
+  // how the name is SPOKEN as letters/digits (e.g. "w" = "double-u" = 3, "3" = "three" = 1).
+  // Exact lookup, not a heuristic — no ambiguity like general English word syllables.
+  const LETTER_SYLLABLES = {
+    a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 2, i: 1, j: 1, k: 1, l: 1, m: 1,
+    n: 1, o: 1, p: 1, q: 1, r: 1, s: 1, t: 1, u: 1, v: 1, w: 3, x: 1, y: 1, z: 1
+  };
+  // How many syllables a single digit takes when SPOKEN aloud on its own
+  // ("3" -> "three" -> 1, "7" -> "seven" -> 2). Shared with getNumberSyllables'
+  // units table below — same underlying fact, one source of truth.
+  const DIGIT_NAME_SYLLABLES = [2, 1, 1, 1, 1, 1, 1, 2, 1, 1]; // 0-9, "zero".."nine"
+  const IDENTIFIER_SHAPE = /^[a-z][a-z0-9]?$/;
+
+  function getIdentifierSyllables(name) {
+    let count = 0;
+    for (const ch of name) {
+      count += /[0-9]/.test(ch) ? DIGIT_NAME_SYLLABLES[Number(ch)] : LETTER_SYLLABLES[ch];
+    }
+    return count;
+  }
 
   // A compile-time failure that carries the offending 1-based line number, so the
   // CLI can print/exit and the REPL can highlight — each caller decides how to report.
@@ -49,7 +76,7 @@
     if (n === 0) return 2; // "zero" (2)
     
     const unitsSyllables = [
-      0, 1, 1, 1, 1, 1, 1, 2, 1, 1, // 0-9
+      ...DIGIT_NAME_SYLLABLES,      // 0-9 (index 0 unused — n===0 returns above, before this array exists)
       1, 3, 1, 2, 2, 2, 2, 3, 2, 2  // 10-19
     ];
     const tensSyllables = [
@@ -58,6 +85,24 @@
 
     let count = 0;
     let originalN = n;
+
+    if (n >= 1000000000000000) {
+      const quadrillions = Math.floor(n / 1000000000000000);
+      count += getNumberSyllables(quadrillions) + 3; // "[quadrillions] quadrillion"
+      n = n % 1000000000000000;
+    }
+
+    if (n >= 1000000000000) {
+      const trillions = Math.floor(n / 1000000000000);
+      count += getNumberSyllables(trillions) + 2; // "[trillions] trillion"
+      n = n % 1000000000000;
+    }
+
+    if (n >= 1000000000) {
+      const billions = Math.floor(n / 1000000000);
+      count += getNumberSyllables(billions) + 2; // "[billions] billion"
+      n = n % 1000000000;
+    }
 
     if (n >= 1000000) {
       const millions = Math.floor(n / 1000000);
@@ -106,7 +151,7 @@
     const lines = source.split('\n');
     for (let row = 0; row < lines.length; row++) {
       const cleanLine = lines[row].replace(/,/g, '');
-      const words = cleanLine.match(/[a-zA-Z]+|[0-9]+/g);
+      const words = cleanLine.match(/[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g);
       if (!words) continue; // blank / word-less line — not a code line
 
       const currentLineNum = row + 1;
@@ -118,6 +163,9 @@
 
         if (/^[0-9]+$/.test(wordText)) {
           const val = parseInt(wordText, 10);
+          if (val > Number.MAX_SAFE_INTEGER) {
+            throw new HaikuError(currentLineNum, `Number "${wordText}" exceeds the maximum safe integer (${Number.MAX_SAFE_INTEGER}).`);
+          }
           runningSyllables += getNumberSyllables(val);
           tokens.push({
             type: "NUMBER",
@@ -128,6 +176,12 @@
         }
 
         if (!VOCAB[wordText]) {
+          if (IDENTIFIER_SHAPE.test(wordText)) {
+            const syll = getIdentifierSyllables(wordText);
+            runningSyllables += syll;
+            tokens.push({ type: "IDENTIFIER", value: wordText, line: currentLineNum });
+            continue;
+          }
           throw new HaikuError(currentLineNum, `Forbidden word "${wordText}" is outside the allowable vocabulary dictionary.`);
         }
 
@@ -181,6 +235,12 @@
         const target = tokens[current++];
         return { type: "RandomStatement", target: target.value };
       }
+      if (token.type === "PRINT") {
+        current++;
+        if (tokens[current] && tokens[current].type === "TO") current++;
+        const value = tokens[current++];
+        return { type: "PrintStatement", value: value.value };
+      }
       if (token.type === "LOOP") {
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
         const left = tokens[current++]; if (tokens[current] && tokens[current].type === "EQ") current++;
@@ -207,6 +267,26 @@
     return ast;
   }
 
+  // Named vars aren't limited to x/y/z/count anymore, so locals can't be hardcoded —
+  // walk the AST once and collect every distinct name actually referenced.
+  function collectIdentifiers(node, names) {
+    if (!node) return;
+    if (node.type === "AssignmentStatement") {
+      names.add(node.target);
+      if (typeof node.value === 'string') names.add(node.value);
+    } else if (node.type === "AdditionStatement") {
+      names.add(node.target);
+      if (typeof node.source === 'string') names.add(node.source);
+    } else if (node.type === "RandomStatement") {
+      names.add(node.target);
+    } else if (node.type === "PrintStatement") {
+      if (typeof node.value === 'string') names.add(node.value);
+    } else if (node.type === "WhileLoopStatement") {
+      names.add(node.condition.left);
+      node.body.forEach(child => collectIdentifiers(child, names));
+    }
+  }
+
   // PHASE 3: Code Generation — turn the AST into a WebAssembly Text (.wat) module.
   function generateWat(ast, seed) {
     // The compiler bakes a 32-bit seed (nonzero) into the module's own PRNG.
@@ -230,6 +310,11 @@
         // Advance the compiler's own PRNG (emitted below) — no host involvement.
         return `${indent}call $next_random\n${indent}local.set $${node.target}\n`;
       }
+      if (node.type === "PrintStatement") {
+        // Unlike everything else, this crosses out of the module — needs the host's $print import.
+        let v = typeof node.value === 'number' ? `i32.const ${node.value}` : `local.get $${node.value}`;
+        return `${indent}${v}\n${indent}call $print\n`;
+      }
       if (node.type === "WhileLoopStatement") {
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
@@ -244,6 +329,10 @@
 
     ast.body.forEach(n => { watBody += walk(n); });
 
+    const localNames = new Set(['x']); // compute() always returns x
+    ast.body.forEach(n => collectIdentifiers(n, localNames));
+    const localsDecl = Array.from(localNames).map(n => `(local $${n} i32)`).join(' ');
+
     // Self-contained xorshift32 PRNG emitted by the compiler — no imports.
     // $next_random advances a mutable global and returns a value in [0, 100).
     const prng =
@@ -255,7 +344,7 @@
       `    local.get $s local.get $s i32.const 5 i32.shl i32.xor local.set $s\n` +
       `    local.get $s global.set $rng\n` +
       `    local.get $s i32.const 100 i32.rem_u)\n`;
-    return `(module\n${prng}  (func $compute (result i32)\n    (local $x i32) (local $y i32) (local $z i32) (local $count i32)\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
+    return `(module\n  (import "env" "print" (func $print (param i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
   }
 
   return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat };
