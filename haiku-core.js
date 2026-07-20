@@ -323,7 +323,12 @@
     } else if (node.type === "InputStatement") {
       names.add(node.target);
     } else if (node.type === "WhileLoopStatement") {
-      names.add(node.condition.left);
+      // Either side of the condition can be a variable or a number literal —
+      // every existing example only ever compared a var to a fixed number, so
+      // this was never exercised, but "loop until g equals s" (two variables)
+      // is exactly what a real program (e.g. a guess-vs-secret check) needs.
+      if (typeof node.condition.left === 'string') names.add(node.condition.left);
+      if (typeof node.condition.right === 'string') names.add(node.condition.right);
       node.body.forEach(child => collectIdentifiers(child, names));
     }
   }
@@ -363,7 +368,9 @@
       if (node.type === "WhileLoopStatement") {
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
-        out += `${indent}local.get $${node.condition.left}\n${indent}i32.const ${node.condition.right}\n${indent}i32.eq\n${indent}br_if 1\n`;
+        let l = typeof node.condition.left === 'number' ? `i32.const ${node.condition.left}` : `local.get $${node.condition.left}`;
+        let r = typeof node.condition.right === 'number' ? `i32.const ${node.condition.right}` : `local.get $${node.condition.right}`;
+        out += `${indent}${l}\n${indent}${r}\n${indent}i32.eq\n${indent}br_if 1\n`;
         node.body.forEach(c => { out += walk(c); });
         out += `${indent}br 0\n`;
         indent = indent.substring(0, indent.length - 2);
