@@ -16,7 +16,7 @@ This document outlines the core concepts, differences, and historical context of
   * Discards irrelevant characters like extra whitespace or comments.
   * Checks for basic vocabulary validation (e.g., invalid words).
 * **HaikuScript Reference:**
-  * Handled by the [`tokenize`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js#L102-L152) function in [`haiku-core.js`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js).
+  * Handled by the [`tokenize`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js#L147-L206) function in [`haiku-core.js`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js).
   * Example conversion:
     * *Source Code:* `"set x to ten"`
     * *Tokens Output:* `[ { type: "ASSIGN" }, { type: "IDENTIFIER", value: "x" }, { type: "NUMBER", value: 10 } ]`
@@ -30,7 +30,7 @@ This document outlines the core concepts, differences, and historical context of
   * Validates grammar correctness (e.g., ensuring a `loop` block is balanced with an `end`).
   * Creates a tree where parent nodes represent compound statements and children represent their arguments or body elements.
 * **HaikuScript Reference:**
-  * Handled by the [`parseProgram`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js#L155-L208) function in [`haiku-core.js`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js).
+  * Handled by the [`parseProgram`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js#L209-L268) function in [`haiku-core.js`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js).
   * Example conversion:
     * *Tokens Input:* `[ { type: "ASSIGN" }, { type: "IDENTIFIER" }, { type: "NUMBER" } ]`
     * *AST Node Output:* `{ type: "AssignmentStatement", target: "x", value: 10 }`

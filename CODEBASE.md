@@ -22,16 +22,22 @@ This file contains the complete source code for the HaikuScript compiler fronten
     "onLanguage:haikuscript"
   ],
   "contributes": {
-    "languages": [{
-      "id": "haikuscript",
-      "aliases": ["HaikuScript"],
-      "extensions": [".hk"]
-    }]
+    "languages": [
+      {
+        "id": "haikuscript",
+        "aliases": [
+          "HaikuScript"
+        ],
+        "extensions": [
+          ".hk"
+        ]
+      }
+    ]
   },
   "scripts": {
-    "tokens": "node haiku.js --dump-tokens fibonacci.hk",
-    "ast": "node haiku.js --dump-ast fibonacci.hk",
-    "compile": "node haiku.js --compile fibonacci.hk",
+    "tokens": "node haiku.js --dump-tokens src/fibonacci.hk",
+    "ast": "node haiku.js --dump-ast src/fibonacci.hk",
+    "compile": "node haiku.js --compile src/fibonacci.hk",
     "serve": "serve .",
     "repl": "serve ."
   },
@@ -48,9 +54,9 @@ This file contains the complete source code for the HaikuScript compiler fronten
 ```javascript
 module.exports = grammar({
   name: 'haikuscript',
-  
-  // Ignore spaces and tabs, but keep newlines strictly structural
-  extras: $ => [/[ \t\r]+/], 
+
+  // Ignore spaces, tabs, and commas, but keep newlines strictly structural
+  extras: $ => [/[ \t\r,]+/], 
 
   rules: {
     // A program is a repetition of stanzas OR random blank lines
@@ -66,8 +72,8 @@ module.exports = grammar({
     // A line is just a series of one or more words
     line: $ => repeat1($.word),
 
-    // A word is any collection of letters
-    word: $ => /[a-zA-Z]+/,
+    // A word is any collection of letters or digits
+    word: $ => /[a-zA-Z]+|[0-9]+/,
 
     newline: $ => /\n/
   }
@@ -86,7 +92,7 @@ module.exports = grammar({
   (#match? @keyword.function "^(dream|imagine|random|randomly|something)$"))
 
 ((word) @number
-  (#match? @number "^(zero|one|ten)$"))
+  (#match? @number "^(zero|one|ten|[0-9]+)$"))
 
 ((word) @comment
   (#match? @comment "^(the|is|it|quietly|gently|suddenly|always|beautifully|telling|sequence)$"))
@@ -94,6 +100,8 @@ module.exports = grammar({
 ((word) @variable
   (#match? @variable "^(x|y|z|count)$"))
 ```
+
+> Note: these Tree-sitter files predate the `PRINT` vocabulary and the short (1-2 char) named-identifier support added to the hand lexer in §4 — they still highlight the original fixed vocabulary correctly, but don't yet tag `print`/`say`/`announce`/etc. as keywords or arbitrary `a`, `r3`, `ww`-style names as variables. Editor highlighting only; doesn't affect compilation.
 
 ## 4. Shared Compiler Core (`haiku-core.js`)
 Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of truth for the vocabulary, syllable audit, AST parser, and code generator — consumed by both the Node CLI and the browser REPL.
@@ -130,10 +138,37 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     "telling": { syllables: 2, type: "IGNORE" }, "sequence": { syllables: 3, type: "IGNORE" },
     "dream": { syllables: 1, type: "RANDOM" }, "imagine": { syllables: 3, type: "RANDOM" },
     "random": { syllables: 2, type: "RANDOM" }, "randomly": { syllables: 3, type: "RANDOM" },
-    "something": { syllables: 2, type: "RANDOM" }
+    "something": { syllables: 2, type: "RANDOM" },
+    "print": { syllables: 1, type: "PRINT" }, "say": { syllables: 1, type: "PRINT" },
+    "speak": { syllables: 1, type: "PRINT" }, "shout": { syllables: 1, type: "PRINT" },
+    "printout": { syllables: 2, type: "PRINT" }, "announce": { syllables: 2, type: "PRINT" },
+    "declare": { syllables: 2, type: "PRINT" }, "reveal": { syllables: 2, type: "PRINT" },
+    "utter": { syllables: 2, type: "PRINT" }, "recite": { syllables: 2, type: "PRINT" },
+    "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" }
   };
 
   const EXPECTED_METER = [5, 7, 5];
+
+  // BASIC-style short variable names (1-2 chars, alpha-first): syllables come from
+  // how the name is SPOKEN as letters/digits (e.g. "w" = "double-u" = 3, "3" = "three" = 1).
+  // Exact lookup, not a heuristic — no ambiguity like general English word syllables.
+  const LETTER_SYLLABLES = {
+    a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 2, i: 1, j: 1, k: 1, l: 1, m: 1,
+    n: 1, o: 1, p: 1, q: 1, r: 1, s: 1, t: 1, u: 1, v: 1, w: 3, x: 1, y: 1, z: 1
+  };
+  // How many syllables a single digit takes when SPOKEN aloud on its own
+  // ("3" -> "three" -> 1, "7" -> "seven" -> 2). Shared with getNumberSyllables'
+  // units table below — same underlying fact, one source of truth.
+  const DIGIT_NAME_SYLLABLES = [2, 1, 1, 1, 1, 1, 1, 2, 1, 1]; // 0-9, "zero".."nine"
+  const IDENTIFIER_SHAPE = /^[a-z][a-z0-9]?$/;
+
+  function getIdentifierSyllables(name) {
+    let count = 0;
+    for (const ch of name) {
+      count += /[0-9]/.test(ch) ? DIGIT_NAME_SYLLABLES[Number(ch)] : LETTER_SYLLABLES[ch];
+    }
+    return count;
+  }
 
   // A compile-time failure that carries the offending 1-based line number, so the
   // CLI can print/exit and the REPL can highlight — each caller decides how to report.
@@ -143,6 +178,72 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       this.name = 'HaikuError';
       this.line = line;
     }
+  }
+
+  function getNumberSyllables(n) {
+    if (n === 0) return 2; // "zero" (2)
+    
+    const unitsSyllables = [
+      ...DIGIT_NAME_SYLLABLES,      // 0-9 (index 0 unused — n===0 returns above, before this array exists)
+      1, 3, 1, 2, 2, 2, 2, 3, 2, 2  // 10-19
+    ];
+    const tensSyllables = [
+      0, 0, 2, 2, 2, 2, 2, 3, 2, 2  // 0-90
+    ];
+
+    let count = 0;
+    let originalN = n;
+
+    if (n >= 1000000000000000) {
+      const quadrillions = Math.floor(n / 1000000000000000);
+      count += getNumberSyllables(quadrillions) + 3; // "[quadrillions] quadrillion"
+      n = n % 1000000000000000;
+    }
+
+    if (n >= 1000000000000) {
+      const trillions = Math.floor(n / 1000000000000);
+      count += getNumberSyllables(trillions) + 2; // "[trillions] trillion"
+      n = n % 1000000000000;
+    }
+
+    if (n >= 1000000000) {
+      const billions = Math.floor(n / 1000000000);
+      count += getNumberSyllables(billions) + 2; // "[billions] billion"
+      n = n % 1000000000;
+    }
+
+    if (n >= 1000000) {
+      const millions = Math.floor(n / 1000000);
+      count += getNumberSyllables(millions) + 2; // "[millions] million"
+      n = n % 1000000;
+    }
+
+    if (n >= 1000) {
+      const thousands = Math.floor(n / 1000);
+      count += getNumberSyllables(thousands) + 2; // "[thousands] thousand"
+      n = n % 1000;
+    }
+
+    if (n >= 100) {
+      const hundreds = Math.floor(n / 100);
+      count += getNumberSyllables(hundreds) + 2; // "[hundreds] hundred"
+      n = n % 100;
+    }
+
+    if (n > 0) {
+      if (originalN > n && originalN >= 100) {
+        count += 1; // "and"
+      }
+      if (n < 20) {
+        count += unitsSyllables[n];
+      } else {
+        const tens = Math.floor(n / 10);
+        const units = n % 10;
+        count += tensSyllables[tens] + unitsSyllables[units];
+      }
+    }
+
+    return count;
   }
 
   // PHASE 1: Lexing + Semantic Analysis (Syllable Auditing).
@@ -157,7 +258,8 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 
     const lines = source.split('\n');
     for (let row = 0; row < lines.length; row++) {
-      const words = lines[row].match(/[a-zA-Z]+/g);
+      const cleanLine = lines[row].replace(/,/g, '');
+      const words = cleanLine.match(/[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g);
       if (!words) continue; // blank / word-less line — not a code line
 
       const currentLineNum = row + 1;
@@ -167,7 +269,27 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       for (const rawWord of words) {
         const wordText = rawWord.toLowerCase();
 
+        if (/^[0-9]+$/.test(wordText)) {
+          const val = parseInt(wordText, 10);
+          if (val > Number.MAX_SAFE_INTEGER) {
+            throw new HaikuError(currentLineNum, `Number "${wordText}" exceeds the maximum safe integer (${Number.MAX_SAFE_INTEGER}).`);
+          }
+          runningSyllables += getNumberSyllables(val);
+          tokens.push({
+            type: "NUMBER",
+            value: val,
+            line: currentLineNum
+          });
+          continue;
+        }
+
         if (!VOCAB[wordText]) {
+          if (IDENTIFIER_SHAPE.test(wordText)) {
+            const syll = getIdentifierSyllables(wordText);
+            runningSyllables += syll;
+            tokens.push({ type: "IDENTIFIER", value: wordText, line: currentLineNum });
+            continue;
+          }
           throw new HaikuError(currentLineNum, `Forbidden word "${wordText}" is outside the allowable vocabulary dictionary.`);
         }
 
@@ -221,6 +343,12 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         const target = tokens[current++];
         return { type: "RandomStatement", target: target.value };
       }
+      if (token.type === "PRINT") {
+        current++;
+        if (tokens[current] && tokens[current].type === "TO") current++;
+        const value = tokens[current++];
+        return { type: "PrintStatement", value: value.value };
+      }
       if (token.type === "LOOP") {
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
         const left = tokens[current++]; if (tokens[current] && tokens[current].type === "EQ") current++;
@@ -247,6 +375,26 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     return ast;
   }
 
+  // Named vars aren't limited to x/y/z/count anymore, so locals can't be hardcoded —
+  // walk the AST once and collect every distinct name actually referenced.
+  function collectIdentifiers(node, names) {
+    if (!node) return;
+    if (node.type === "AssignmentStatement") {
+      names.add(node.target);
+      if (typeof node.value === 'string') names.add(node.value);
+    } else if (node.type === "AdditionStatement") {
+      names.add(node.target);
+      if (typeof node.source === 'string') names.add(node.source);
+    } else if (node.type === "RandomStatement") {
+      names.add(node.target);
+    } else if (node.type === "PrintStatement") {
+      if (typeof node.value === 'string') names.add(node.value);
+    } else if (node.type === "WhileLoopStatement") {
+      names.add(node.condition.left);
+      node.body.forEach(child => collectIdentifiers(child, names));
+    }
+  }
+
   // PHASE 3: Code Generation — turn the AST into a WebAssembly Text (.wat) module.
   function generateWat(ast, seed) {
     // The compiler bakes a 32-bit seed (nonzero) into the module's own PRNG.
@@ -270,6 +418,11 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         // Advance the compiler's own PRNG (emitted below) — no host involvement.
         return `${indent}call $next_random\n${indent}local.set $${node.target}\n`;
       }
+      if (node.type === "PrintStatement") {
+        // Unlike everything else, this crosses out of the module — needs the host's $print import.
+        let v = typeof node.value === 'number' ? `i32.const ${node.value}` : `local.get $${node.value}`;
+        return `${indent}${v}\n${indent}call $print\n`;
+      }
       if (node.type === "WhileLoopStatement") {
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
@@ -284,6 +437,10 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 
     ast.body.forEach(n => { watBody += walk(n); });
 
+    const localNames = new Set(['x']); // compute() always returns x
+    ast.body.forEach(n => collectIdentifiers(n, localNames));
+    const localsDecl = Array.from(localNames).map(n => `(local $${n} i32)`).join(' ');
+
     // Self-contained xorshift32 PRNG emitted by the compiler — no imports.
     // $next_random advances a mutable global and returns a value in [0, 100).
     const prng =
@@ -295,7 +452,7 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       `    local.get $s local.get $s i32.const 5 i32.shl i32.xor local.set $s\n` +
       `    local.get $s global.set $rng\n` +
       `    local.get $s i32.const 100 i32.rem_u)\n`;
-    return `(module\n${prng}  (func $compute (result i32)\n    (local $x i32) (local $y i32) (local $z i32) (local $count i32)\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
+    return `(module\n  (import "env" "print" (func $print (param i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
   }
 
   return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat };
@@ -303,7 +460,7 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 ```
 
 ## 5. Compiler Pipeline CLI (`haiku.js`)
-Node entry point. Owns file I/O and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--json-errors`); delegates all lexing and compilation to the shared core.
+Node entry point. Owns file I/O and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--run`, `--json-errors`); delegates all lexing and compilation to the shared core. `--run` assembles the WAT to WASM and executes it immediately, supplying `console.log` as the `env.print` host import so `PrintStatement`s surface mid-run.
 ```javascript
 const fs = require('fs');
 const { tokenize, parseProgram, generateWat, HaikuError } = require('./haiku-core');
@@ -357,7 +514,17 @@ async function runCompiler() {
     process.exit(0);
   }
 
-  // PHASE 3: Code Generation & Automated Binary Assembly
+  // PHASE 3: Code Generation, Assembly, and (for --run) Execution
+  if (flag === '--run') {
+    const fullWat = generateWat(ast, Date.now());
+    const wasmModule = wabt.parseWat(targetFile, fullWat);
+    const { buffer } = wasmModule.toBinary({});
+    const importObject = { env: { print: (v) => console.log('Print:', v) } };
+    const { instance } = await WebAssembly.instantiate(buffer, importObject);
+    console.log('Result:', instance.exports.compute());
+    process.exit(0);
+  }
+
   if (flag === '--compile') {
     const fullWat = generateWat(ast, Date.now());
 
@@ -381,7 +548,7 @@ runCompiler();
 ```
 
 ## 6. Browser REPL Driver (`repl.js`)
-Runs the whole pipeline client-side: the shared core lexes/audits/parses/generates from the editor text, WABT assembles WASM in-browser, and `WebAssembly.instantiate` executes it. Also wires up file open/save.
+Runs the whole pipeline client-side: the shared core lexes/audits/parses/generates from the editor text, WABT assembles WASM in-browser, and `WebAssembly.instantiate` executes it — supplying the same `env.print` import as the CLI, collecting values into the **Printed Output** panel. Also wires up file open/save.
 ```javascript
 // HaikuScript browser REPL — runs the full compiler pipeline client-side.
 // Globals provided by the <script> tags in repl.html:
@@ -445,6 +612,7 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
     $('tokens').textContent = '';
     $('ast').textContent = '';
     $('wat').textContent = '';
+    $('printed').textContent = '';
 
     try {
       await ensureToolchain();
@@ -464,9 +632,12 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
 
       const module = wabt.parseWat('repl.wat', wat);
       const { buffer } = module.toBinary({});
-      const { instance } = await WebAssembly.instantiate(buffer);
+      const printed = [];
+      const importObject = { env: { print: (v) => printed.push(v) } };
+      const { instance } = await WebAssembly.instantiate(buffer, importObject);
 
       const value = instance.exports.compute();
+      $('printed').textContent = printed.length ? printed.join('\n') : '(none)';
       $('result').textContent = 'Result: ' + value;
       $('result').className = 'result ok';
       setStatus('Done ✓', 'ok');
@@ -551,7 +722,7 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
   function init() {
     editor.value = DEFAULT_SOURCE;
     // Try to load the on-disk sample so the REPL mirrors the CLI's fibonacci.hk.
-    fetch('/fibonacci.hk').then(r => r.ok ? r.text() : null).then(t => {
+    fetch('/src/fibonacci.hk').then(r => r.ok ? r.text() : null).then(t => {
       if (t) { editor.value = t; fileName.textContent = 'fibonacci.hk'; }
     }).catch(() => {});
 
@@ -578,7 +749,7 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
 ```
 
 ## 7. Browser REPL Page (`repl.html`)
-Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight out of `node_modules`, then the REPL driver.
+Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight out of `node_modules`, then the REPL driver. The **Printed Output** panel shows every value a `PrintStatement` surfaced mid-run, in order, above the final **Result**.
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -651,6 +822,10 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
     </div>
     <div>
       <div id="result" class="result">—</div>
+      <details open>
+        <summary>Printed Output</summary>
+        <pre id="printed"></pre>
+      </details>
       <details open>
         <summary>Tokens</summary>
         <pre id="tokens"></pre>
@@ -727,7 +902,7 @@ module.exports = { activate, deactivate };
 ```
 
 ## 9. Web Sandbox Test Harness (`index.html`)
-A minimal single-shot page that fetches the pre-compiled `fibonacci.wasm` and renders the result on screen (and to the console).
+A minimal single-shot page that fetches the pre-compiled `src/fibonacci.wasm` (built by `npm run compile`, which now writes its `.wat`/`.wasm` output alongside the moved `.hk` sources) and renders the result on screen (and to the console).
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -759,7 +934,7 @@ A minimal single-shot page that fetches the pre-compiled `fibonacci.wasm` and re
     async function loadPoemExecution() {
       const output = document.getElementById('result');
       try {
-        const serverResponse = await fetch('fibonacci.wasm');
+        const serverResponse = await fetch('src/fibonacci.wasm');
         const compiledInstance = await WebAssembly.instantiate(await serverResponse.arrayBuffer());
         const calculationResult = compiledInstance.instance.exports.compute();
 
@@ -778,7 +953,8 @@ A minimal single-shot page that fetches the pre-compiled `fibonacci.wasm` and re
 </html>
 ```
 
-## 10. Source Poetry Input Code (`fibonacci.hk`)
+## 10. Source Poetry Input Code (`src/fibonacci.hk`)
+All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), and `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`).
 ```text
 Set x to zero
 Set y to one quietly

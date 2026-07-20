@@ -12,7 +12,7 @@ This document outlines the high-level concepts of code generation, instruction m
   * **Three-Address Code (TAC):** A common Intermediate Representation (IR) used by compilers where each instruction has at most one operator (verb) and three operands (symbols).
     * *Example:* `ADD x, y, z` (meaning: add `y` and `z` and store in `x`).
   * **HaikuScript Reference:**
-    * In [`generateWat`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js#L211-L259), the compiler loops through AST nodes and emits text-based WebAssembly instructions.
+    * In [`generateWat`](file:///c:/Code/Fizzbash/haikuscript/haiku-core.js#L291-L348), the compiler loops through AST nodes and emits text-based WebAssembly instructions.
 
 ---
 
