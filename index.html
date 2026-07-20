@@ -29,7 +29,16 @@
       const output = document.getElementById('result');
       try {
         const serverResponse = await fetch('build/fibonacci.wasm');
-        const compiledInstance = await WebAssembly.instantiate(await serverResponse.arrayBuffer());
+        const importObject = {
+          env: {
+            print: (v) => console.log('[HaikuScript Print]:', v),
+            input: () => {
+              const value = parseInt(window.prompt('Input:') || '', 10);
+              return Number.isNaN(value) ? 0 : value;
+            }
+          }
+        };
+        const compiledInstance = await WebAssembly.instantiate(await serverResponse.arrayBuffer(), importObject);
         const calculationResult = compiledInstance.instance.exports.compute();
 
         output.textContent = 'Result: ' + calculationResult;
