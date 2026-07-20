@@ -96,6 +96,8 @@ The static server from Phase 3 also serves a full REPL that runs **every** stage
 npm run serve
 ```
 
+Or double-click **`repl.bat`** — starts server and opens the REPL tab for you.
+
 Then open **`http://localhost:3000/repl.html`**.
 
 - **Edit on screen** — type HaikuScript into the editor and press **Run** (or **Ctrl + Enter**).
