@@ -144,7 +144,10 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     "printout": { syllables: 2, type: "PRINT" }, "announce": { syllables: 2, type: "PRINT" },
     "declare": { syllables: 2, type: "PRINT" }, "reveal": { syllables: 2, type: "PRINT" },
     "utter": { syllables: 2, type: "PRINT" }, "recite": { syllables: 2, type: "PRINT" },
-    "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" }
+    "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" },
+    "ask": { syllables: 1, type: "INPUT" }, "guess": { syllables: 1, type: "INPUT" },
+    "prompt": { syllables: 1, type: "INPUT" }, "input": { syllables: 2, type: "INPUT" },
+    "user": { syllables: 2, type: "IGNORE" }
   };
 
   const EXPECTED_METER = [5, 7, 5];
@@ -153,7 +156,7 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
   // how the name is SPOKEN as letters/digits (e.g. "w" = "double-u" = 3, "3" = "three" = 1).
   // Exact lookup, not a heuristic — no ambiguity like general English word syllables.
   const LETTER_SYLLABLES = {
-    a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 2, i: 1, j: 1, k: 1, l: 1, m: 1,
+    a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 1, i: 1, j: 1, k: 1, l: 1, m: 1,
     n: 1, o: 1, p: 1, q: 1, r: 1, s: 1, t: 1, u: 1, v: 1, w: 3, x: 1, y: 1, z: 1
   };
   // How many syllables a single digit takes when SPOKEN aloud on its own
@@ -329,6 +332,10 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         if (value && value.type === "RANDOM") {
           return { type: "RandomStatement", target: target.value };
         }
+        // "set x to <input>" — treat an INPUT word in value position as a read.
+        if (value && value.type === "INPUT") {
+          return { type: "InputStatement", target: target.value };
+        }
         return { type: "AssignmentStatement", target: target.value, value: value.value };
       }
       if (token.type === "ADD") {
@@ -348,6 +355,12 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         if (tokens[current] && tokens[current].type === "TO") current++;
         const value = tokens[current++];
         return { type: "PrintStatement", value: value.value };
+      }
+      if (token.type === "INPUT") {
+        current++;
+        if (tokens[current] && tokens[current].type === "TO") current++;
+        const target = tokens[current++];
+        return { type: "InputStatement", target: target.value };
       }
       if (token.type === "LOOP") {
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
@@ -389,6 +402,8 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       names.add(node.target);
     } else if (node.type === "PrintStatement") {
       if (typeof node.value === 'string') names.add(node.value);
+    } else if (node.type === "InputStatement") {
+      names.add(node.target);
     } else if (node.type === "WhileLoopStatement") {
       names.add(node.condition.left);
       node.body.forEach(child => collectIdentifiers(child, names));
@@ -423,6 +438,10 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         let v = typeof node.value === 'number' ? `i32.const ${node.value}` : `local.get $${node.value}`;
         return `${indent}${v}\n${indent}call $print\n`;
       }
+      if (node.type === "InputStatement") {
+        // Mirror image of PrintStatement — pulls a value in from the host's $input import.
+        return `${indent}call $input\n${indent}local.set $${node.target}\n`;
+      }
       if (node.type === "WhileLoopStatement") {
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
@@ -452,7 +471,7 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       `    local.get $s local.get $s i32.const 5 i32.shl i32.xor local.set $s\n` +
       `    local.get $s global.set $rng\n` +
       `    local.get $s i32.const 100 i32.rem_u)\n`;
-    return `(module\n  (import "env" "print" (func $print (param i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
+    return `(module\n  (import "env" "print" (func $print (param i32)))\n  (import "env" "input" (func $input (result i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
   }
 
   return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat };
@@ -460,11 +479,43 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 ```
 
 ## 5. Compiler Pipeline CLI (`haiku.js`)
-Node entry point. Owns file I/O and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--run`, `--json-errors`); delegates all lexing and compilation to the shared core. `--run` assembles the WAT to WASM and executes it immediately, supplying `console.log` as the `env.print` host import so `PrintStatement`s surface mid-run. `--compile` writes its `.wat`/`.wasm` output to `build/` — kept separate from the `.hk` sources under `src/` regardless of the input file's own location.
+Node entry point. Owns file I/O and CLI flags (`--dump-tokens`, `--dump-ast`, `--compile`, `--run`, `--json-errors`); delegates all lexing and compilation to the shared core. `--run` assembles the WAT to WASM and executes it immediately, supplying `console.log` as the `env.print` host import so `PrintStatement`s surface mid-run, and a blocking stdin reader as the `env.input` import so `InputStatement`s can read a value back. `--compile` writes its `.wat`/`.wasm` output to `build/` — kept separate from the `.hk` sources under `src/` regardless of the input file's own location.
 ```javascript
 const fs = require('fs');
 const path = require('path');
 const { tokenize, parseProgram, generateWat, HaikuError } = require('./haiku-core');
+
+// WASM imports are called synchronously, so reading input has to block —
+// stdin read via fs.readSync rather than readline's async interface.
+// A single OS read can return several lines at once (common with piped
+// input), so leftover bytes are kept across calls and consumed one line
+// at a time instead of being silently discarded.
+let stdinLeftover = '';
+function readInputSync() {
+  process.stdout.write('Input: ');
+  while (!stdinLeftover.includes('\n')) {
+    const buf = Buffer.alloc(1024);
+    let bytesRead = 0;
+    try {
+      bytesRead = fs.readSync(0, buf, 0, 1024, null);
+    } catch (err) {
+      break; // stdin closed/unavailable
+    }
+    if (bytesRead === 0) break; // EOF
+    stdinLeftover += buf.toString('utf8', 0, bytesRead);
+  }
+  const newlineIndex = stdinLeftover.indexOf('\n');
+  let line;
+  if (newlineIndex === -1) {
+    line = stdinLeftover;
+    stdinLeftover = '';
+  } else {
+    line = stdinLeftover.slice(0, newlineIndex);
+    stdinLeftover = stdinLeftover.slice(newlineIndex + 1);
+  }
+  const value = parseInt(line.trim(), 10);
+  return Number.isNaN(value) ? 0 : value;
+}
 
 // Helper to handle standard logging vs structured JSON errors for the IDE extension
 function emitError(jsonMode, line, message) {
@@ -520,7 +571,7 @@ async function runCompiler() {
     const fullWat = generateWat(ast, Date.now());
     const wasmModule = wabt.parseWat(targetFile, fullWat);
     const { buffer } = wasmModule.toBinary({});
-    const importObject = { env: { print: (v) => console.log('Print:', v) } };
+    const importObject = { env: { print: (v) => console.log('Print:', v), input: readInputSync } };
     const { instance } = await WebAssembly.instantiate(buffer, importObject);
     console.log('Result:', instance.exports.compute());
     process.exit(0);
@@ -556,7 +607,7 @@ runCompiler();
 ```
 
 ## 6. Browser REPL Driver (`repl.js`)
-Runs the whole pipeline client-side: the shared core lexes/audits/parses/generates from the editor text, WABT assembles WASM in-browser, and `WebAssembly.instantiate` executes it — supplying the same `env.print` import as the CLI, collecting values into the **Printed Output** panel. Also wires up file open/save.
+Runs the whole pipeline client-side: the shared core lexes/audits/parses/generates from the editor text, WABT assembles WASM in-browser, and `WebAssembly.instantiate` executes it — supplying the same `env.print` import as the CLI (collecting values into the **Printed Output** panel), plus `env.input` backed by `window.prompt` (synchronous, same reason it works — WASM imports must return immediately). Also wires up file open/save.
 ```javascript
 // HaikuScript browser REPL — runs the full compiler pipeline client-side.
 // Globals provided by the <script> tags in repl.html:
@@ -641,7 +692,11 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
       const module = wabt.parseWat('repl.wat', wat);
       const { buffer } = module.toBinary({});
       const printed = [];
-      const importObject = { env: { print: (v) => printed.push(v) } };
+      const readInput = () => {
+        const value = parseInt(window.prompt('Input:') || '', 10);
+        return Number.isNaN(value) ? 0 : value;
+      };
+      const importObject = { env: { print: (v) => printed.push(v), input: readInput } };
       const { instance } = await WebAssembly.instantiate(buffer, importObject);
 
       const value = instance.exports.compute();
@@ -962,7 +1017,7 @@ A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` 
 ```
 
 ## 10. Source Poetry Input Code (`src/fibonacci.hk`)
-All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), and `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`).
+All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), and `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`).
 ```text
 Set x to zero
 Set y to one quietly

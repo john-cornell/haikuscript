@@ -35,8 +35,11 @@ generator in the run path:
 
 - A **program** is a sequence of **stanzas**, optionally separated by blank lines.
 - A **stanza** is **three lines**.
-- Each **line** is one or more **words**; a word is letters only (`/[a-zA-Z]+/`).
-- **Spaces and tabs don't matter; newlines do** — they end a line.
+- Each **line** is one or more **words**; a word is either a run of 3+ letters (a
+  dictionary word), a 1-2 character alpha-first token (a short variable name, see
+  §3a), or a run of digits (a number literal).
+- **Spaces and tabs don't matter; newlines do** — they end a line. Commas are
+  stripped too, so you can punctuate a line for readability if you like.
 - Every line is scored against a repeating meter, `5, 7, 5`, that cycles every three
   code lines. Each word has a fixed syllable count; a line's words must total exactly
   its target or you get `Poetic meter broken`. Blank lines are not code and are skipped.
@@ -44,11 +47,15 @@ generator in the run path:
 The hand lexer is essentially:
 
 ```javascript
-source.split('\n')                    // one entry per physical line
-      .map(line => line.match(/[a-zA-Z]+/g) || [])   // words on that line
+source.split('\n')                                               // one entry per physical line
+      .map(line => line.replace(/,/g, ''))
+      .map(line => line.match(/[a-zA-Z]{3,}|[a-zA-Z][a-zA-Z0-9]?|[0-9]+/g) || [])   // words on that line
 ```
 
-Numbers are spelled out (`zero`, `one`, `ten`) because digits aren't legal words.
+Numbers can be spelled out (`zero`, `one`, `ten`, …) or written as digits directly
+(`0`, `42`, `1000`) — syllables for digit literals are computed algorithmically
+(spoken English number names, so `42` = "forty-two" = 3 syllables), not looked up
+in a fixed list, so arbitrarily large numbers work.
 
 ---
 
@@ -62,16 +69,25 @@ the line with filler words until it hits its syllable target.
 
 | Role | Words | Notes |
 | ---- | ----- | ----- |
-| **Command** (the verb that starts the instruction) | `set`, `add`, `loop`, `end`, and the random words `dream` / `random` / `something` / `imagine` / `randomly` | comes first |
-| **Variable** (the thing acted on) | `x`, `y`, `z`, `count` | the only four |
-| **Number** | `zero` (0), `one` (1), `ten` (10) | literals |
+| **Command** (the verb that starts the instruction) | `set`, `add`, `loop`, `end`; the random words `dream` / `random` / `something` / `imagine` / `randomly`; the print words `print` / `say` / `speak` / `shout` / `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` / `vocalize` / `articulate`; the input words `ask` / `guess` / `prompt` / `input` | comes first |
+| **Variable** (the thing acted on) | `x`, `y`, `z`, `count`, **or any 1-2 character name starting with a letter** (`a`, `g`, `r3`, `ww`, …) | not a fixed list — see below |
+| **Number** | spelled (`zero`, `one`, `ten`, …) or digits (`0`, `42`, …) | literals of any size |
 | **Connector** (glue the pattern needs) | `to`, `until`, `equals` | fixed position |
-| **Filler** (meaning-free padding) | `the`, `is`, `it`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
+| **Filler** (meaning-free padding) | `the`, `is`, `it`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
 
 Only the **command, variable, number, and connector** words carry meaning, and they
 must appear in the right order. **Filler words are discarded before the program is
 understood**, so you can sprinkle them almost anywhere to fix your syllable count
-without changing what the line does.
+without changing what the line does. `user` exists purely so `ask user the g` reads
+naturally — it contributes nothing beyond its 2 syllables, identically to `the`.
+
+**Short variable names** aren't a fixed dictionary entry like `x`/`y`/`z`/`count` —
+any 1-2 character token starting with a letter (second character, if present, can be
+a letter or digit) is accepted as a variable automatically. Its syllable count comes
+from how the name is *spoken*: each character is read as a letter or digit name
+(`w` = "double-u" = 3 syllables, `3` = "three" = 1 syllable), so `r3` = 2 syllables
+and `ww` = 6. This is an exact lookup table, not a guess — every letter A-Z and
+digit 0-9 has one fixed, unambiguous spoken-syllable count.
 
 ### 3b. The line patterns
 
@@ -83,8 +99,14 @@ Using ⟨…⟩ to mean “put a word of this role here”:
 | Store a random number | `set ⟨variable⟩ to ⟨random⟩` | `Set x to something` |
 | Store a random (verb form) | `⟨random⟩ ⟨variable⟩` | `Dream x` |
 | Add (target += source) | `add ⟨number \| variable⟩ to ⟨variable⟩` | `Add one to count` |
+| Print a value | `⟨print⟩ ⟨number \| variable⟩` | `Print the x` |
+| Read a value in | `set ⟨variable⟩ to ⟨input⟩` | `Set g to input` |
+| Read a value in (verb form) | `⟨input⟩ ⟨variable⟩` | `Guess the g` |
 | Start a loop | `loop until ⟨variable⟩ equals ⟨number⟩` | `Loop until count equals ten` |
 | End a loop | `end loop` | `Gently end the loop` |
+
+`to` is optional everywhere it appears above — the parser skips it if present but
+never requires it. It's there for phrasing, not grammar.
 
 Case doesn't matter — every word is lower-cased before it's looked up, so `Set` and
 `set` are the same.
@@ -104,15 +126,18 @@ of writing HaikuScript.
 ### 3d. Rules of thumb
 
 - **Command word first.** Every instruction begins with `set`, `add`, `loop`, `end`,
-  or a random word.
-- **`to` separates the two operands** in `set … to …` and `add … to …`.
+  a random word, a print word, or an input word.
+- **`to` separates the two operands** in `set … to …` and `add … to …` (and is
+  optional in the print/input patterns).
 - **A loop is two lines apart:** `loop until … equals …` opens it; `end loop`
   (usually padded, e.g. `Gently end the loop always`) closes it. Everything between
   them is the loop body.
 - **Reach for filler to fix meter**, never to change logic — filler is invisible to
   the compiler.
-- **The answer is always `x`.** Whatever `x` holds at the end is what the program
-  returns; there is no `print` or `return`.
+- **The final answer is always `x`.** Whatever `x` holds when the program ends is
+  what `compute()` returns. `Print` statements surface values *during* the run —
+  useful inside a loop, where each iteration overwrites the previous value and only
+  the last one would otherwise be visible — but only `x`'s last value is the return.
 
 ---
 
@@ -131,10 +156,12 @@ Every word must appear here or you get
 | `UNTIL`      | `until` (2)                                                                                                   | loop condition intro |
 | `EQ`         | `equals` (2)                                                                                                  | equality in a loop condition |
 | `END`        | `end` (1)                                                                                                     | close a loop body |
-| `IDENTIFIER` | `x` `y` `z` `count` (1 each)                                                                                   | the four variables |
-| `NUMBER`     | `zero` (2 → 0), `one` (1 → 1), `ten` (1 → 10)                                                                  | integer literals |
+| `IDENTIFIER` | `x` `y` `z` `count` (1 each, fixed dictionary entries), **or** any 1-2 character alpha-first name — syllables computed from its spoken letters/digits (see §3a) | a variable |
+| `NUMBER`     | spelled (`zero` = 2 → 0, `one` = 1 → 1, `ten` = 1 → 10, …), **or** digits (`0`, `42`, …) — syllables computed algorithmically for any magnitude | integer literals |
 | `RANDOM`     | `dream` (1), `random` (2), `something` (2), `imagine` (3), `randomly` (3)                                      | roll a random 0–99 |
-| `IGNORE`     | `the` `is` `it` (1), `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
+| `PRINT`      | `print` `say` `speak` `shout` (1), `printout` `announce` `declare` `reveal` `utter` `recite` (2), `vocalize` (3), `articulate` (4) | surface a value mid-run (see §5) |
+| `INPUT`      | `ask` `guess` `prompt` (1), `input` (2)                                                                       | read a value in from the host (see §5) |
+| `IGNORE`     | `the` `is` `it` `user` (1–2), `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
 
 ---
 
@@ -145,22 +172,37 @@ After the syllable audit, the meaningful tokens are parsed into statements:
 - **`set <var> to <number|var>`** → assignment (`x = 0`, `x = y`).
 - **`<random> <var>`** or **`set <var> to <random>`** → assign a random 0–99.
 - **`add <source> to <target>`** → `target = target + source`.
+- **`<print> <number|var>`** → surface a value immediately, without changing any
+  variable. Compiles to a call into a host-supplied `env.print` import — the CLI
+  logs it to the console, the browser REPL collects it into the **Printed Output**
+  panel.
+- **`<input> <var>`** or **`set <var> to <input>`** → read a value in from the host
+  and store it. Compiles to a call into a host-supplied `env.input` import — the CLI
+  blocks on a synchronous stdin read, the REPL uses `window.prompt`. Values are
+  plain `i32` numbers; there's no character type, so a "guess a letter" program has
+  to encode letters as numbers (e.g. a code 1–26) rather than reading a literal `A`.
 - **`loop until <var> equals <number>` … `end loop`** → run the body **while
   `var != number`** (it exits the instant they're equal; equality is the only test).
 - **Filler (`IGNORE`) words** produce no statement at all.
 
-`compute()` returns the final value of **`x`**.
+`compute()` returns the final value of **`x`** — `print` only surfaces values
+*during* the run, it doesn't change what gets returned.
 
 ---
 
 ## 6. What the language cannot do
 
 - **Only addition** — no subtract, multiply, divide, or modulo in the language.
-- **Equality-only loops** — the single loop condition is `equals`.
-- **Four variables**: `x`, `y`, `z`, `count`.
-- **One output**: the final `x`.
-- **Randomness is the exception** to “only addition”: the compiler emits its own
-  self-contained xorshift PRNG into the WASM, so `RANDOM` words work with no host help.
+- **Equality-only loops** — the single loop condition is `equals`; no `<`, `>`, `!=`.
+- **No strings or arrays** — every variable is a single `i32` number. A word or a
+  sequence of guessed letters can't be represented directly; you'd need one
+  variable per letter position, encoded as a number.
+- **Variables aren't a fixed list anymore**: `x`, `y`, `z`, `count`, plus any 1-2
+  character alpha-first name — but there's still only **one return value**, `x`.
+- **Randomness and input are the exceptions** to "only addition and one return
+  value": the compiler emits its own self-contained xorshift PRNG into the WASM, so
+  `RANDOM` words work with no host help, while `PRINT` and `INPUT` cross the module
+  boundary via host imports (`env.print` / `env.input`) — see §5.
 
 ---
 
@@ -175,7 +217,10 @@ source (.hk)
   → WebAssembly.instantiate      (compute() → result)
 ```
 
-CLI diagnostic flags: `--dump-tokens`, `--dump-ast`, `--compile`, `--json-errors`.
+CLI diagnostic flags: `--dump-tokens`, `--dump-ast`, `--compile`, `--run`, `--json-errors`.
+`--run` assembles and executes immediately (no files written), wiring `env.print`
+to `console.log` and `env.input` to a blocking stdin read. `--compile` writes its
+`.wat`/`.wasm` output to `build/`, separate from the `.hk` source.
 
 ---
 
@@ -217,6 +262,10 @@ Meter check (each stanza is 5 / 7 / 5):
 | `Quietly it is` | quietly3 it1 is1 | 5 | (filler) |
 
 This computes the 10th Fibonacci number: **`compute()` → 55**.
+
+More worked examples live under `src/`: `named_vars.hk` and `syllable_check.hk`
+(short variable names), `ten_randoms.hk` (`print` inside a loop), and
+`input_demo.hk` (all four `INPUT` keywords, plus the `ask user` filler phrase).
 
 ---
 

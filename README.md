@@ -115,6 +115,10 @@ Dream the x beautifully
 Quietly it is
 ```
 
+**Printing** surfaces a value *during* the run instead of only via the final `x`. Any of the `PRINT` keywords — `print` / `say` / `speak` / `shout` (1 syl), `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` (2 syl), `vocalize` (3 syl), `articulate` (4 syl) — followed by a number or variable, works: `Print the x`. This is what makes a loop useful for more than just its last value — each iteration can `print` before the next one overwrites it. Values show up in the REPL's **Printed Output** panel, or as `Print: <value>` lines when run via the CLI (`node haiku.js --run <file>`).
+
+**Reading input** goes the other way — pulling a value in from whoever's running the program. Any of `ask` / `guess` / `prompt` (1 syl) or `input` (2 syl) works, either as a verb (`Guess the g`) or in assignment form (`Set g to input`). The filler word `user` exists so you can write `Ask user the g` if it reads better. In the CLI this blocks on a synchronous stdin read (prompts `Input: ` on each call); in the REPL it uses `window.prompt`. There's no character type — values are plain numbers, so reading an actual letter means agreeing on an encoding (e.g. `1`–`26` for A–Z) rather than typing the letter itself.
+
 > How it works: `repl.html` loads the shared compiler core (`haiku-core.js`) plus the browser build of `wabt` straight from `node_modules/`. The CLI (`haiku.js`) and the REPL share the exact same core, so they can never disagree.
 
 ---
