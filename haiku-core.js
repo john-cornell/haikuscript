@@ -36,7 +36,10 @@
     "printout": { syllables: 2, type: "PRINT" }, "announce": { syllables: 2, type: "PRINT" },
     "declare": { syllables: 2, type: "PRINT" }, "reveal": { syllables: 2, type: "PRINT" },
     "utter": { syllables: 2, type: "PRINT" }, "recite": { syllables: 2, type: "PRINT" },
-    "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" }
+    "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" },
+    "ask": { syllables: 1, type: "INPUT" }, "guess": { syllables: 1, type: "INPUT" },
+    "prompt": { syllables: 1, type: "INPUT" }, "input": { syllables: 2, type: "INPUT" },
+    "user": { syllables: 2, type: "IGNORE" }
   };
 
   const EXPECTED_METER = [5, 7, 5];
@@ -45,7 +48,7 @@
   // how the name is SPOKEN as letters/digits (e.g. "w" = "double-u" = 3, "3" = "three" = 1).
   // Exact lookup, not a heuristic — no ambiguity like general English word syllables.
   const LETTER_SYLLABLES = {
-    a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 2, i: 1, j: 1, k: 1, l: 1, m: 1,
+    a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 1, i: 1, j: 1, k: 1, l: 1, m: 1,
     n: 1, o: 1, p: 1, q: 1, r: 1, s: 1, t: 1, u: 1, v: 1, w: 3, x: 1, y: 1, z: 1
   };
   // How many syllables a single digit takes when SPOKEN aloud on its own
@@ -221,6 +224,10 @@
         if (value && value.type === "RANDOM") {
           return { type: "RandomStatement", target: target.value };
         }
+        // "set x to <input>" — treat an INPUT word in value position as a read.
+        if (value && value.type === "INPUT") {
+          return { type: "InputStatement", target: target.value };
+        }
         return { type: "AssignmentStatement", target: target.value, value: value.value };
       }
       if (token.type === "ADD") {
@@ -240,6 +247,12 @@
         if (tokens[current] && tokens[current].type === "TO") current++;
         const value = tokens[current++];
         return { type: "PrintStatement", value: value.value };
+      }
+      if (token.type === "INPUT") {
+        current++;
+        if (tokens[current] && tokens[current].type === "TO") current++;
+        const target = tokens[current++];
+        return { type: "InputStatement", target: target.value };
       }
       if (token.type === "LOOP") {
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
@@ -281,6 +294,8 @@
       names.add(node.target);
     } else if (node.type === "PrintStatement") {
       if (typeof node.value === 'string') names.add(node.value);
+    } else if (node.type === "InputStatement") {
+      names.add(node.target);
     } else if (node.type === "WhileLoopStatement") {
       names.add(node.condition.left);
       node.body.forEach(child => collectIdentifiers(child, names));
@@ -315,6 +330,10 @@
         let v = typeof node.value === 'number' ? `i32.const ${node.value}` : `local.get $${node.value}`;
         return `${indent}${v}\n${indent}call $print\n`;
       }
+      if (node.type === "InputStatement") {
+        // Mirror image of PrintStatement — pulls a value in from the host's $input import.
+        return `${indent}call $input\n${indent}local.set $${node.target}\n`;
+      }
       if (node.type === "WhileLoopStatement") {
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
@@ -344,7 +363,7 @@
       `    local.get $s local.get $s i32.const 5 i32.shl i32.xor local.set $s\n` +
       `    local.get $s global.set $rng\n` +
       `    local.get $s i32.const 100 i32.rem_u)\n`;
-    return `(module\n  (import "env" "print" (func $print (param i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
+    return `(module\n  (import "env" "print" (func $print (param i32)))\n  (import "env" "input" (func $input (result i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
   }
 
   return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat };

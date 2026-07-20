@@ -81,7 +81,11 @@
       const module = wabt.parseWat('repl.wat', wat);
       const { buffer } = module.toBinary({});
       const printed = [];
-      const importObject = { env: { print: (v) => printed.push(v) } };
+      const readInput = () => {
+        const value = parseInt(window.prompt('Input:') || '', 10);
+        return Number.isNaN(value) ? 0 : value;
+      };
+      const importObject = { env: { print: (v) => printed.push(v), input: readInput } };
       const { instance } = await WebAssembly.instantiate(buffer, importObject);
 
       const value = instance.exports.compute();

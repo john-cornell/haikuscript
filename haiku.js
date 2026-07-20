@@ -2,6 +2,38 @@ const fs = require('fs');
 const path = require('path');
 const { tokenize, parseProgram, generateWat, HaikuError } = require('./haiku-core');
 
+// WASM imports are called synchronously, so reading input has to block —
+// stdin read via fs.readSync rather than readline's async interface.
+// A single OS read can return several lines at once (common with piped
+// input), so leftover bytes are kept across calls and consumed one line
+// at a time instead of being silently discarded.
+let stdinLeftover = '';
+function readInputSync() {
+  process.stdout.write('Input: ');
+  while (!stdinLeftover.includes('\n')) {
+    const buf = Buffer.alloc(1024);
+    let bytesRead = 0;
+    try {
+      bytesRead = fs.readSync(0, buf, 0, 1024, null);
+    } catch (err) {
+      break; // stdin closed/unavailable
+    }
+    if (bytesRead === 0) break; // EOF
+    stdinLeftover += buf.toString('utf8', 0, bytesRead);
+  }
+  const newlineIndex = stdinLeftover.indexOf('\n');
+  let line;
+  if (newlineIndex === -1) {
+    line = stdinLeftover;
+    stdinLeftover = '';
+  } else {
+    line = stdinLeftover.slice(0, newlineIndex);
+    stdinLeftover = stdinLeftover.slice(newlineIndex + 1);
+  }
+  const value = parseInt(line.trim(), 10);
+  return Number.isNaN(value) ? 0 : value;
+}
+
 // Helper to handle standard logging vs structured JSON errors for the IDE extension
 function emitError(jsonMode, line, message) {
   if (jsonMode) {
@@ -56,7 +88,7 @@ async function runCompiler() {
     const fullWat = generateWat(ast, Date.now());
     const wasmModule = wabt.parseWat(targetFile, fullWat);
     const { buffer } = wasmModule.toBinary({});
-    const importObject = { env: { print: (v) => console.log('Print:', v) } };
+    const importObject = { env: { print: (v) => console.log('Print:', v), input: readInputSync } };
     const { instance } = await WebAssembly.instantiate(buffer, importObject);
     console.log('Result:', instance.exports.compute());
     process.exit(0);
