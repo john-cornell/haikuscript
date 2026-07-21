@@ -119,6 +119,8 @@ Quietly it is
 
 **Reading input** goes the other way — pulling a value in from whoever's running the program. Any of `ask` / `guess` / `prompt` (1 syl) or `input` (2 syl) works, either as a verb (`Guess the g`) or in assignment form (`Set g to input`). The filler word `user` exists so you can write `Ask user the g` if it reads better. In the CLI this blocks on a synchronous stdin read (prompts `Input: ` on each call); in the REPL it uses `window.prompt`. There's no character type — values are plain numbers, so reading an actual letter means agreeing on an encoding (e.g. `1`–`26` for A–Z) rather than typing the letter itself.
 
+**Comparisons and logic** live inside a loop's `until` condition — there's no general `if`, so this is the only place a boolean value is ever used. Three base comparisons — `equals` (`==`), `less`/`under`/`below` (`<`), `more`/`over`/`above` (`>`) — combine with `not` (negates the one comparison right after it) and `and`/`or`/`xor` (chains another comparison term) to give the full six-operator relational set for free: `not equals` is `!=`, `not less` is `>=`, `not more` is `<=`. Evaluation is a flat left-to-right chain with no precedence and no parentheses — `x equals 1 and y equals 2 or z equals 3` reads as `((x==1) and (y==2)) or (z==3)`. Example: `Loop until x more 4` counts up until `x` exceeds 4; `Loop until not x less y` counts up until `x` is at least `y`.
+
 > How it works: `repl.html` loads the shared compiler core (`haiku-core.js`) plus the browser build of `wabt` straight from `node_modules/`. The CLI (`haiku.js`) and the REPL share the exact same core, so they can never disagree.
 
 ---

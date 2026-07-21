@@ -73,7 +73,10 @@ the line with filler words until it hits its syllable target.
 | **Variable** (the thing acted on) | `x`, `y`, `z`, `count`, **or any 1-2 character name starting with a letter** (`a`, `g`, `r3`, `ww`, …) | not a fixed list — see below |
 | **Number** | spelled (`zero`, `one`, `ten`, …) or digits (`0`, `42`, …) | literals of any size |
 | **Connector** (glue the pattern needs) | `to`, `until`, `equals` | fixed position |
-| **Filler** (meaning-free padding) | `the`, `is`, `it`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
+| **Comparison** (loop condition only, see below) | `equals`; `less` / `under` / `below` (<); `more` / `over` / `above` (>) | one per comparison term |
+| **Negation** (loop condition only) | `not` — negates the single comparison right after it | prefix |
+| **Join** (loop condition only) | `and`, `or`, `xor` — chains another comparison term | between terms |
+| **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
 
 Only the **command, variable, number, and connector** words carry meaning, and they
 must appear in the right order. **Filler words are discarded before the program is
@@ -89,6 +92,17 @@ from how the name is *spoken*: each character is read as a letter or digit name
 and `ww` = 6. This is an exact lookup table, not a guess — every letter A-Z and
 digit 0-9 has one fixed, unambiguous spoken-syllable count.
 
+**Comparisons and logical joins** only exist inside a loop's `until` condition —
+there's no general-purpose boolean expression usable elsewhere (no `if`, no boolean
+variables). A condition is a **flat chain** of comparisons: `⟨left⟩ ⟨comparison⟩
+⟨right⟩`, optionally prefixed by `not`, optionally continued with `and`/`or`/`xor`
+followed by another comparison term. There's deliberately **no precedence and no
+parentheses** — `x equals 1 and y equals 2 or z equals 3` evaluates strictly left to
+right: `((x==1) and (y==2)) or (z==3)`. Only three base comparisons exist
+(`equals`, `less`/`under`/`below`, `more`/`over`/`above`), but `not` derives the
+rest for free: `not equals` is `!=`, `not less`/`not under`/`not below` is `>=`,
+`not more`/`not over`/`not above` is `<=`.
+
 ### 3b. The line patterns
 
 Using ⟨…⟩ to mean “put a word of this role here”:
@@ -102,7 +116,7 @@ Using ⟨…⟩ to mean “put a word of this role here”:
 | Print a value | `⟨print⟩ ⟨number \| variable⟩` | `Print the x` |
 | Read a value in | `set ⟨variable⟩ to ⟨input⟩` | `Set g to input` |
 | Read a value in (verb form) | `⟨input⟩ ⟨variable⟩` | `Guess the g` |
-| Start a loop | `loop until ⟨variable⟩ equals ⟨number \| variable⟩` | `Loop until count equals ten`, or `Loop until g equals s` |
+| Start a loop | `loop until [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ [(and\|or\|xor) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩]…` | `Loop until count equals ten`, `Loop until x more 4`, `Loop until not x less y`, `Loop until x equals 3 and a equals b` |
 | End a loop | `end loop` | `Gently end the loop` |
 
 `to` is optional everywhere it appears above — the parser skips it if present but
@@ -154,14 +168,20 @@ Every word must appear here or you get
 | `ADD`        | `add` (1)                                                                                                     | begin an addition |
 | `LOOP`       | `loop` (1)                                                                                                    | begin / end a loop |
 | `UNTIL`      | `until` (2)                                                                                                   | loop condition intro |
-| `EQ`         | `equals` (2)                                                                                                  | equality in a loop condition |
+| `EQ`         | `equals` (2)                                                                                                  | `==` in a comparison |
+| `LT`         | `less` (1), `under` (2), `below` (2)                                                                          | `<` in a comparison |
+| `GT`         | `more` (1), `over` (2), `above` (2)                                                                           | `>` in a comparison |
+| `NOT`        | `not` (1)                                                                                                     | negates the comparison right after it |
+| `AND`        | `and` (1)                                                                                                     | chains another comparison term (both must hold) |
+| `OR`         | `or` (1)                                                                                                      | chains another comparison term (either may hold) |
+| `XOR`        | `xor` (1)                                                                                                     | chains another comparison term (exactly one must hold) |
 | `END`        | `end` (1)                                                                                                     | close a loop body |
 | `IDENTIFIER` | `x` `y` `z` `count` (1 each, fixed dictionary entries), **or** any 1-2 character alpha-first name — syllables computed from its spoken letters/digits (see §3a) | a variable |
 | `NUMBER`     | spelled (`zero` = 2 → 0, `one` = 1 → 1, `ten` = 1 → 10, …), **or** digits (`0`, `42`, …) — syllables computed algorithmically for any magnitude | integer literals |
 | `RANDOM`     | `dream` (1), `random` (2), `something` (2), `imagine` (3), `randomly` (3)                                      | roll a random 0–99 |
 | `PRINT`      | `print` `say` `speak` `shout` (1), `printout` `announce` `declare` `reveal` `utter` `recite` (2), `vocalize` (3), `articulate` (4) | surface a value mid-run (see §5) |
 | `INPUT`      | `ask` `guess` `prompt` (1), `input` (2)                                                                       | read a value in from the host (see §5) |
-| `IGNORE`     | `the` `is` `it` `user` (1–2), `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
+| `IGNORE`     | `the` `is` `it` `now` `user` (1–2), `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
 
 ---
 
@@ -181,11 +201,14 @@ After the syllable audit, the meaningful tokens are parsed into statements:
   blocks on a synchronous stdin read, the REPL uses `window.prompt`. Values are
   plain `i32` numbers; there's no character type, so a "guess a letter" program has
   to encode letters as numbers (e.g. a code 1–26) rather than reading a literal `A`.
-- **`loop until <left> equals <right>` … `end loop`** → run the body **while
-  they're unequal** (it exits the instant they're equal; equality is the only
-  test). Either side can be a number or a variable — comparing two variables
-  (`loop until g equals s`) is what lets a "keep guessing until it matches the
-  secret" program work.
+- **`loop until <condition>` … `end loop`** → run the body while the condition is
+  **false**, exiting the instant it becomes true. A condition is a flat chain of
+  comparison terms: each term is `<left> <op> <right>` (`op` is `eq`/`lt`/`gt`),
+  optionally negated by a leading `not`; terms after the first carry a `join`
+  (`and`/`or`/`xor`) saying how they combine with everything before them, evaluated
+  strictly left to right with no precedence. Either side of any term can be a
+  number or a variable — comparing two variables (`loop until g equals s`) is what
+  lets a "keep guessing until it matches the secret" program work.
 - **Filler (`IGNORE`) words** produce no statement at all.
 
 `compute()` returns the final value of **`x`** — `print` only surfaces values
@@ -196,7 +219,14 @@ After the syllable audit, the meaningful tokens are parsed into statements:
 ## 6. What the language cannot do
 
 - **Only addition** — no subtract, multiply, divide, or modulo in the language.
-- **Equality-only loops** — the single loop condition is `equals`; no `<`, `>`, `!=`.
+- **Comparisons and logic only exist inside a loop condition** — `equals`/`less`/`more`,
+  `not`, and `and`/`or`/`xor` chain into the one place a boolean value is ever used
+  (deciding whether a loop exits). There's no `if`, no boolean variable type, and no
+  way to compute a comparison's result and assign or print it directly.
+- **No precedence, no parentheses** — a condition is a flat left-to-right chain;
+  `and`/`or`/`xor` are not distinguished by binding strength, and there's no way to
+  group a sub-expression. `not` only ever negates the single term right after it,
+  never a whole parenthesized group.
 - **No strings or arrays** — every variable is a single `i32` number. A word or a
   sequence of guessed letters can't be represented directly; you'd need one
   variable per letter position, encoded as a number.
@@ -268,11 +298,14 @@ This computes the 10th Fibonacci number: **`compute()` → 55**.
 
 More worked examples live under `src/`: `named_vars.hk` and `syllable_check.hk`
 (short variable names), `ten_randoms.hk` (`print` inside a loop), `input_demo.hk`
-(all four `INPUT` keywords, plus the `ask user` filler phrase), and
-`guess_number.hk` (a minimal guessing game — `loop until g equals s` keeps reading
-guesses until one matches a random secret, then reports how many tries it took).
-Note there's no `<`/`>` in the language, only `equals`, so this can't give
-higher/lower hints — it's "keep guessing," not a classic number-guessing game.
+(all four `INPUT` keywords, plus the `ask user` filler phrase), `guess_number.hk`
+(a minimal guessing game — `loop until g equals s` keeps reading guesses until one
+matches a random secret, then reports how many tries it took), and
+`comparisons_demo.hk` (all six comparison/logical words — `less`/`more`, `not`,
+`and`/`or`/`xor` — each in its own self-contained counting loop with a predictable
+printed result). Note that comparisons only exist inside a loop condition (§3a),
+so `guess_number.hk` still can't give higher/lower hints even with `<`/`>` now
+available — it's "keep guessing," not a classic number-guessing game.
 
 ---
 

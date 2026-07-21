@@ -132,7 +132,8 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     "one": { syllables: 1, type: "NUMBER", value: 1 },
     "ten": { syllables: 1, type: "NUMBER", value: 10 },
     "the": { syllables: 1, type: "IGNORE" }, "is": { syllables: 1, type: "IGNORE" },
-    "it": { syllables: 1, type: "IGNORE" }, "quietly": { syllables: 3, type: "IGNORE" },
+    "it": { syllables: 1, type: "IGNORE" }, "now": { syllables: 1, type: "IGNORE" },
+    "quietly": { syllables: 3, type: "IGNORE" },
     "gently": { syllables: 2, type: "IGNORE" }, "suddenly": { syllables: 3, type: "IGNORE" },
     "always": { syllables: 2, type: "IGNORE" }, "beautifully": { syllables: 4, type: "IGNORE" },
     "telling": { syllables: 2, type: "IGNORE" }, "sequence": { syllables: 3, type: "IGNORE" },
@@ -147,7 +148,14 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" },
     "ask": { syllables: 1, type: "INPUT" }, "guess": { syllables: 1, type: "INPUT" },
     "prompt": { syllables: 1, type: "INPUT" }, "input": { syllables: 2, type: "INPUT" },
-    "user": { syllables: 2, type: "IGNORE" }
+    "user": { syllables: 2, type: "IGNORE" },
+    "less": { syllables: 1, type: "LT" }, "under": { syllables: 2, type: "LT" },
+    "below": { syllables: 2, type: "LT" },
+    "more": { syllables: 1, type: "GT" }, "over": { syllables: 2, type: "GT" },
+    "above": { syllables: 2, type: "GT" },
+    "not": { syllables: 1, type: "NOT" },
+    "and": { syllables: 1, type: "AND" }, "or": { syllables: 1, type: "OR" },
+    "xor": { syllables: 1, type: "XOR" }
   };
 
   const EXPECTED_METER = [5, 7, 5];
@@ -319,6 +327,34 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
   // PHASE 2: Recursive AST Parser
   function parseProgram(tokens) {
     let current = 0;
+    const REL_TYPES = { EQ: 'eq', LT: 'lt', GT: 'gt' };
+    const JOIN_TYPES = { AND: 'and', OR: 'or', XOR: 'xor' };
+
+    // A condition is a flat chain of comparisons joined by and/or/xor, evaluated
+    // strictly left to right — no precedence, no parentheses. Keeps the parser a
+    // simple loop instead of needing real precedence-climbing machinery. "not"
+    // only ever negates the single comparison right after it, e.g.
+    // "not g equals s" is != , "not g over s" is <=, "not g under s" is >=.
+    function parseConditionTerm() {
+      let negate = false;
+      if (tokens[current] && tokens[current].type === "NOT") { negate = true; current++; }
+      const left = tokens[current++];
+      const op = REL_TYPES[tokens[current++].type];
+      const right = tokens[current++];
+      return { negate, left: left.value, op, right: right.value };
+    }
+
+    function parseCondition() {
+      const terms = [parseConditionTerm()];
+      while (tokens[current] && JOIN_TYPES[tokens[current].type]) {
+        const join = JOIN_TYPES[tokens[current].type];
+        current++;
+        const term = parseConditionTerm();
+        term.join = join;
+        terms.push(term);
+      }
+      return terms;
+    }
 
     function parseAST() {
       if (current >= tokens.length) return null;
@@ -364,9 +400,8 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       }
       if (token.type === "LOOP") {
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
-        const left = tokens[current++]; if (tokens[current] && tokens[current].type === "EQ") current++;
-        const right = tokens[current++];
-        const node = { type: "WhileLoopStatement", condition: { left: left.value, right: right.value }, body: [] };
+        const terms = parseCondition();
+        const node = { type: "WhileLoopStatement", condition: { terms }, body: [] };
 
         while (current < tokens.length && tokens[current].type !== "END") {
           const stmt = parseAST();
@@ -405,12 +440,11 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     } else if (node.type === "InputStatement") {
       names.add(node.target);
     } else if (node.type === "WhileLoopStatement") {
-      // Either side of the condition can be a variable or a number literal —
-      // every existing example only ever compared a var to a fixed number, so
-      // this was never exercised, but "loop until g equals s" (two variables)
-      // is exactly what a real program (e.g. a guess-vs-secret check) needs.
-      if (typeof node.condition.left === 'string') names.add(node.condition.left);
-      if (typeof node.condition.right === 'string') names.add(node.condition.right);
+      // Either side of any comparison term can be a variable or a number literal.
+      node.condition.terms.forEach(term => {
+        if (typeof term.left === 'string') names.add(term.left);
+        if (typeof term.right === 'string') names.add(term.right);
+      });
       node.body.forEach(child => collectIdentifiers(child, names));
     }
   }
@@ -423,6 +457,24 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     const RNG_SEED = ((seed >>> 0) || 0x9E3779B9);
     let indent = "  ";
     let watBody = "";
+
+    // Emits a flat chain of comparisons (and/or/xor, left to right, no
+    // precedence) leaving a single 0/1 i32 on the stack. WASM's bitwise
+    // and/or/xor work directly as logical ops here since operands are
+    // always exactly 0 or 1; i32.eqz gives NOT the same way.
+    const REL_INSTR = { eq: 'i32.eq', lt: 'i32.lt_s', gt: 'i32.gt_s' };
+    const JOIN_INSTR = { and: 'i32.and', or: 'i32.or', xor: 'i32.xor' };
+    function emitCondition(terms) {
+      let out = '';
+      terms.forEach((term, i) => {
+        const l = typeof term.left === 'number' ? `i32.const ${term.left}` : `local.get $${term.left}`;
+        const r = typeof term.right === 'number' ? `i32.const ${term.right}` : `local.get $${term.right}`;
+        out += `${indent}${l}\n${indent}${r}\n${indent}${REL_INSTR[term.op]}\n`;
+        if (term.negate) out += `${indent}i32.eqz\n`;
+        if (i > 0) out += `${indent}${JOIN_INSTR[term.join]}\n`;
+      });
+      return out;
+    }
 
     function walk(node) {
       if (!node) return "";
@@ -450,9 +502,8 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       if (node.type === "WhileLoopStatement") {
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
-        let l = typeof node.condition.left === 'number' ? `i32.const ${node.condition.left}` : `local.get $${node.condition.left}`;
-        let r = typeof node.condition.right === 'number' ? `i32.const ${node.condition.right}` : `local.get $${node.condition.right}`;
-        out += `${indent}${l}\n${indent}${r}\n${indent}i32.eq\n${indent}br_if 1\n`;
+        out += emitCondition(node.condition.terms);
+        out += `${indent}br_if 1\n`;
         node.body.forEach(c => { out += walk(c); });
         out += `${indent}br 0\n`;
         indent = indent.substring(0, indent.length - 2);
@@ -1024,7 +1075,7 @@ A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` 
 ```
 
 ## 10. Source Poetry Input Code (`src/fibonacci.hk`)
-All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), and `guess_number.hk` (a minimal guessing game combining all of the above — `loop until g equals s` keeps reading guesses until one matches a random secret, then prints the winning guess and how many tries it took; no `<`/`>` in the language, so it's "keep guessing," not higher/lower hints).
+All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), `guess_number.hk` (a minimal guessing game combining all of the above — `loop until g equals s` keeps reading guesses until one matches a random secret, then prints the winning guess and how many tries it took), and `comparisons_demo.hk` (five self-contained counting loops exercising `<`, `>`, `and`, `or`, and `xor` — each printing a predictable result that proves the operator behaves correctly, including the `xor`-vs-`or` discrimination case where both terms are true simultaneously).
 ```text
 Set x to zero
 Set y to one quietly
