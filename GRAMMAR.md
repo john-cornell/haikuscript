@@ -77,7 +77,7 @@ the line with filler words until it hits its syllable target.
 | **Negation** (loop/if condition) | `not` — negates the single comparison right after it | prefix |
 | **Join** (loop/if condition) | `and`, `or`, `xor` — chains another comparison term | between terms |
 | **Branch** | `else` — introduces the alternative body of an `if` | between bodies |
-| **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `than`, `you`, `should`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
+| **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `than`, `you`, `should`, `done`, `out`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
 
 Only the **command, variable, number, and connector** words carry meaning, and they
 must appear in the right order. **Filler words are discarded before the program is
@@ -203,7 +203,7 @@ Every word must appear here or you get
 | `RANDOM`     | `dream` (1), `random` (2), `something` (2), `imagine` (3), `randomly` (3)                                      | roll a random 0–99 |
 | `PRINT`      | `print` `say` `speak` `shout` (1), `printout` `announce` `declare` `reveal` `utter` `recite` (2), `vocalize` (3), `articulate` (4) | surface a value mid-run (see §5) |
 | `INPUT`      | `ask` `guess` `prompt` (1), `input` (2)                                                                       | read a value in from the host (see §5) |
-| `IGNORE`     | `the` `is` `it` `now` `user` (1–2), `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
+| `IGNORE`     | `the` `is` `it` `now` `than` `you` `should` `done` `out` (1), `user` `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
 
 ---
 
@@ -306,7 +306,7 @@ Set y to the z
 
 Add one to the count
 Gently end the loop always
-Quietly it is
+Gently it is done
 ```
 
 Meter check (each stanza is 5 / 7 / 5):
@@ -324,7 +324,7 @@ Meter check (each stanza is 5 / 7 / 5):
 | `Set y to the z` | set1 y1 to1 the1 z1 | 5 | y = z |
 | `Add one to the count` | add1 one1 to1 the1 count1 | 5 | count += 1 |
 | `Gently end the loop always` | gently2 end1 the1 loop1 always2 | 7 | end loop |
-| `Quietly it is` | quietly3 it1 is1 | 5 | (filler) |
+| `Gently it is done` | gently2 it1 is1 done1 | 5 | (filler) |
 
 This computes the 10th Fibonacci number: **`compute()` → 55**.
 

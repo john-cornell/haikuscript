@@ -112,7 +112,7 @@ Then open **`http://localhost:3000/repl.html`**.
 ```text
 Set x to zero
 Dream the x beautifully
-Quietly it is
+Gently it is done
 ```
 
 **Printing** surfaces a value *during* the run instead of only via the final `x`. Any of the `PRINT` keywords — `print` / `say` / `speak` / `shout` (1 syl), `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` (2 syl), `vocalize` (3 syl), `articulate` (4 syl) — followed by a number or variable, works: `Print the x`. This is what makes a loop useful for more than just its last value — each iteration can `print` before the next one overwrites it. Values show up in the REPL's **Printed Output** panel, or as `Print: <value>` lines when run via the CLI (`node haiku.js --run <file>`).
