@@ -125,6 +125,8 @@ Gently it is done
 
 **`until` starts a loop on its own** — since introducing a loop condition is `until`'s whole job, a bare `until` line (no preceding `loop`) works identically: `Loop until x equals ten` and `Until x equals ten` parse the same way. Handy when `loop`+`until` together would push a line over its syllable budget.
 
+**`set`, `assign`, and `remember`** all assign a value, but not in the same word order — each follows how the verb actually reads in English rather than sharing one grammar. `set`/`remember` are target-first (`Set x to zero`, `Remember x is now twelve`); `assign` is value-first (`Assign ten to x`). Which word opens the line decides how the rest of it is read, so swapping a target-first phrasing onto `assign` (or vice versa) silently reads the wrong word as the variable — there's no error, just the wrong AST. `to` is optional for all three, same as everywhere else it appears: `Set x 12` and `Set x to 12` parse identically.
+
 > How it works: `repl.html` loads the shared compiler core (`haiku-core.js`) plus the browser build of `wabt` straight from `node_modules/`. The CLI (`haiku.js`) and the REPL share the exact same core, so they can never disagree.
 
 ---

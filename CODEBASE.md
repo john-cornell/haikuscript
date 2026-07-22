@@ -125,6 +125,7 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 
     "and": { syllables: 1, type: "AND" },
 
+    "assign": { syllables: 2, type: "ASSIGN" }, "remember": { syllables: 3, type: "ASSIGN" },
     "set": { syllables: 1, type: "ASSIGN" },
 
     "else": { syllables: 2, type: "ELSE" },
@@ -390,14 +391,27 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       const token = tokens[current];
 
       if (token.type === "ASSIGN") {
-        current++; const target = tokens[current++];
-        if (tokens[current] && tokens[current].type === "TO") current++;
-        const value = tokens[current++];
-        // "set x to <random>" — treat a RANDOM word in value position as a roll.
+        // "set x to zero" reads target-first; "assign ten to x" reads
+        // value-first — that's the natural English word order for each verb,
+        // not an arbitrary choice, so which word was used (token.value) picks
+        // the argument order rather than both synonyms sharing one grammar.
+        const usesValueFirst = token.value === "assign";
+        current++;
+        let target, value;
+        if (usesValueFirst) {
+          value = tokens[current++];
+          if (tokens[current] && tokens[current].type === "TO") current++;
+          target = tokens[current++];
+        } else {
+          target = tokens[current++];
+          if (tokens[current] && tokens[current].type === "TO") current++;
+          value = tokens[current++];
+        }
+        // "set/assign ... <random>" — treat a RANDOM word in value position as a roll.
         if (value && value.type === "RANDOM") {
           return { type: "RandomStatement", target: target.value };
         }
-        // "set x to <input>" — treat an INPUT word in value position as a read.
+        // "set/assign ... <input>" — treat an INPUT word in value position as a read.
         if (value && value.type === "INPUT") {
           return { type: "InputStatement", target: target.value };
         }

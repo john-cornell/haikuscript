@@ -69,7 +69,7 @@ the line with filler words until it hits its syllable target.
 
 | Role | Words | Notes |
 | ---- | ----- | ----- |
-| **Command** (the verb that starts the instruction) | `set`, `add`, `loop`, `until` (also starts a loop on its own), `if`, `end`; the random words `dream` / `random` / `something` / `imagine` / `randomly`; the print words `print` / `say` / `speak` / `shout` / `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` / `vocalize` / `articulate`; the input words `ask` / `guess` / `prompt` / `input` | comes first |
+| **Command** (the verb that starts the instruction) | `set` / `assign` / `remember`, `add`, `loop`, `until` (also starts a loop on its own), `if`, `end`; the random words `dream` / `random` / `something` / `imagine` / `randomly`; the print words `print` / `say` / `speak` / `shout` / `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` / `vocalize` / `articulate`; the input words `ask` / `guess` / `prompt` / `input` | comes first |
 | **Variable** (the thing acted on) | `x`, `y`, `z`, `count`, **or any 1-2 character name starting with a letter** (`a`, `g`, `r3`, `ww`, …) | not a fixed list — see below |
 | **Number** | spelled (`zero`, `one`, `ten`, …) or digits (`0`, `42`, …) | literals of any size |
 | **Connector** (glue the pattern needs) | `to`, `until`, `equals` | fixed position |
@@ -111,6 +111,16 @@ reads as plain English and *is* exactly that — `else` followed by a nested `if
 There's still no way to compute a condition's value and store or print it directly;
 `if`/`loop` are the only two places a boolean is ever consumed.
 
+**`set`, `assign`, and `remember`** all perform the same assignment, but **not**
+with the same word order — each follows however the verb actually reads in
+English. `set`/`remember` are target-first: `Set x to zero`, `Remember x is now
+twelve` (variable, then value). `assign` is value-first: `Assign ten to x` (value,
+then variable) — that's the natural reading of "assign," not an arbitrary choice.
+Whichever word starts the line decides which order the rest of the line is read
+in; mixing them up (e.g. writing `assign` but phrasing it target-first) parses the
+words in the wrong roles without any error, since the parser has no way to tell a
+misordered variable from a misordered number.
+
 **`until` starts a loop on its own** — `loop` is the explicit form, but since
 `until`'s only job is introducing a loop condition, a bare `until` line implies the
 loop too. `Loop until x equals ten` and `Until x equals ten` parse identically;
@@ -122,7 +132,8 @@ Using ⟨…⟩ to mean “put a word of this role here”:
 
 | What you want | Pattern | Example |
 | ---- | ---- | ---- |
-| Store a value | `set ⟨variable⟩ to ⟨number \| variable⟩` | `Set x to zero` |
+| Store a value (target-first) | `(set\|remember) ⟨variable⟩ to ⟨number \| variable⟩` | `Set x to zero`, `Remember x is now twelve` |
+| Store a value (value-first) | `assign ⟨number \| variable⟩ to ⟨variable⟩` | `Assign ten to x` |
 | Store a random number | `set ⟨variable⟩ to ⟨random⟩` | `Set x to something` |
 | Store a random (verb form) | `⟨random⟩ ⟨variable⟩` | `Dream x` |
 | Add (target += source) | `add ⟨number \| variable⟩ to ⟨variable⟩` | `Add one to count` |
@@ -136,7 +147,8 @@ Using ⟨…⟩ to mean “put a word of this role here”:
 | End an if | `end if` | `End the if it is` |
 
 `to` is optional everywhere it appears above — the parser skips it if present but
-never requires it. It's there for phrasing, not grammar.
+never requires it. It's there for phrasing, not grammar. `Set x to 12`, `Set x 12`,
+and `Remember x 12` all parse identically.
 
 Case doesn't matter — every word is lower-cased before it's looked up, so `Set` and
 `set` are the same.
@@ -183,7 +195,7 @@ Every word must appear here or you get
 
 | Token type   | Words (syllables)                                                                                             | Meaning |
 | ------------ | ------------------------------------------------------------------------------------------------------------- | ------- |
-| `ASSIGN`     | `set` (1)                                                                                                     | begin an assignment |
+| `ASSIGN`     | `set` (1) *(target-first)*, `assign` (2) *(value-first)*, `remember` (3) *(target-first)*                    | begin an assignment — word order depends on which word is used, see §3a |
 | `TO`         | `to` (1)                                                                                                      | separator in `set … to …` / `add … to …` |
 | `ADD`        | `add` (1)                                                                                                     | begin an addition |
 | `LOOP`       | `loop` (1)                                                                                                    | begin / end a loop |
@@ -211,7 +223,10 @@ Every word must appear here or you get
 
 After the syllable audit, the meaningful tokens are parsed into statements:
 
-- **`set <var> to <number|var>`** → assignment (`x = 0`, `x = y`).
+- **`set <var> to <number|var>`** or **`remember <var> to <number|var>`** (target
+  first), or **`assign <number|var> to <var>`** (value first) → assignment
+  (`x = 0`, `x = y`). Which word starts the line picks which argument order the
+  rest of the line is read in.
 - **`<random> <var>`** or **`set <var> to <random>`** → assign a random 0–99.
 - **`add <source> to <target>`** → `target = target + source`.
 - **`<print> <number|var>`** → surface a value immediately, without changing any
