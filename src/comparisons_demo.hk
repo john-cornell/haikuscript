@@ -1,6 +1,6 @@
 Set x to zero
-Loop until the x more 4
-Now add one to x
+Loop until x more than 4
+You add one to x
 
 End the loop it is
 Print the x it is gently
@@ -10,7 +10,7 @@ Set x to zero
 Loop until x equals 3
 and a equals b
 
-Now add one to x
+You add one to x
 Gently end the loop always
 Quietly it is
 
@@ -22,7 +22,7 @@ Set x to zero
 Loop x equals zero it
 xor a equals b
 
-Now add one to x
+You add one to x
 Gently end the loop always
 Quietly it is
 
@@ -34,7 +34,7 @@ Set x to zero
 Loop until x equals 5
 or a equals b
 
-Now add one to x
+You add one to x
 Gently end the loop always
 Quietly it is
 
@@ -47,7 +47,7 @@ Set the y to 5 gently
 Quietly it is
 
 Loop not x less y
-Now add one to x gently
+You should add one to x now
 End the loop it is
 
 Print the x gently

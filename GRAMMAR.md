@@ -76,7 +76,7 @@ the line with filler words until it hits its syllable target.
 | **Comparison** (loop condition only, see below) | `equals`; `less` / `under` / `below` (<); `more` / `over` / `above` (>) | one per comparison term |
 | **Negation** (loop condition only) | `not` — negates the single comparison right after it | prefix |
 | **Join** (loop condition only) | `and`, `or`, `xor` — chains another comparison term | between terms |
-| **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
+| **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `than`, `you`, `should`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
 
 Only the **command, variable, number, and connector** words carry meaning, and they
 must appear in the right order. **Filler words are discarded before the program is

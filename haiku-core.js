@@ -25,6 +25,8 @@
     "ten": { syllables: 1, type: "NUMBER", value: 10 },
     "the": { syllables: 1, type: "IGNORE" }, "is": { syllables: 1, type: "IGNORE" },
     "it": { syllables: 1, type: "IGNORE" }, "now": { syllables: 1, type: "IGNORE" },
+    "than": { syllables: 1, type: "IGNORE" },
+    "you": { syllables: 1, type: "IGNORE" }, "should": { syllables: 1, type: "IGNORE" },
     "quietly": { syllables: 3, type: "IGNORE" },
     "gently": { syllables: 2, type: "IGNORE" }, "suddenly": { syllables: 3, type: "IGNORE" },
     "always": { syllables: 2, type: "IGNORE" }, "beautifully": { syllables: 4, type: "IGNORE" },
