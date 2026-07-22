@@ -1,0 +1,17 @@
+Set a1 zero
+While a1 is less than ten
+Add one to a1
+
+End the loop always
+Print the a1 it gently
+Gently it is done
+
+Set a1 zero
+While a1 is less than ten
+and b less than ten
+
+Add one to a1
+Gently end the loop always
+Gently it is done
+
+Print a1 gently

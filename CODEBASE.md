@@ -185,6 +185,8 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
 
     "until": { syllables: 2, type: "UNTIL" },
 
+    "while": { syllables: 1, type: "WHILE" },
+
     "xor": { syllables: 1, type: "XOR" }
   };
 
@@ -441,15 +443,21 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         const target = tokens[current++];
         return { type: "InputStatement", target: target.value };
       }
-      if (token.type === "LOOP" || token.type === "UNTIL") {
+      if (token.type === "LOOP" || token.type === "UNTIL" || token.type === "WHILE") {
         // "until" implies a loop on its own — "loop" is just the explicit form.
-        // Consumes whichever token triggered entry, then optionally skips a
-        // following UNTIL (only present when LOOP started it): "Loop until x
-        // equals y" and bare "Until x equals y" both land here and parse the
-        // same way.
+        // "while" also starts a loop, but with OPPOSITE polarity: "until X"
+        // continues while X is false, exiting the instant it's true; "while X"
+        // continues while X is true, exiting the instant it's false — the
+        // natural English meaning of each word, not an arbitrary choice (same
+        // reasoning as assign/set/remember's differing argument order). The
+        // invert flag lets codegen negate the WHOLE combined condition once,
+        // after and/or/xor are folded together — never per-term, since De
+        // Morgan's laws mean negating one term of a multi-term chain doesn't
+        // negate the chain's result.
+        const invert = token.type === "WHILE";
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
         const terms = parseCondition();
-        const node = { type: "WhileLoopStatement", condition: { terms }, body: [] };
+        const node = { type: "WhileLoopStatement", condition: { terms, invert }, body: [] };
 
         while (current < tokens.length && tokens[current].type !== "END") {
           const stmt = parseAST();
@@ -578,6 +586,9 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
         out += emitCondition(node.condition.terms);
+        // "while" negates the whole combined condition once, here — after
+        // and/or/xor are folded, never per-term (see the parser's LOOP branch).
+        if (node.condition.invert) out += `${indent}i32.eqz\n`;
         out += `${indent}br_if 1\n`;
         node.body.forEach(c => { out += walk(c); });
         out += `${indent}br 0\n`;
@@ -1168,7 +1179,7 @@ A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` 
 ```
 
 ## 10. Source Poetry Input Code (`src/fibonacci.hk`)
-All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), `guess_number.hk` (a minimal guessing game combining all of the above — `loop until g equals s` keeps reading guesses until one matches a random secret, then prints the winning guess and how many tries it took, with no hints), `comparisons_demo.hk` (five self-contained counting loops exercising `<`, `>`, `and`, `or`, and `xor` — each printing a predictable result that proves the operator behaves correctly, including the `xor`-vs-`or` discrimination case where both terms are true simultaneously), and `higher_lower.hk` (a real higher/lower guessing game using `if`/`else if`/`else` to print a hint after every wrong guess — nested `if`s inside the `else` branch skip the hint entirely on the winning guess, a fix for the "iteration ordering" bug that showed up when the naive version printed a misleading hint on the correct guess itself).
+All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), `guess_number.hk` (a minimal guessing game combining all of the above — `loop until g equals s` keeps reading guesses until one matches a random secret, then prints the winning guess and how many tries it took, with no hints), `comparisons_demo.hk` (five self-contained counting loops exercising `<`, `>`, `and`, `or`, and `xor` — each printing a predictable result that proves the operator behaves correctly, including the `xor`-vs-`or` discrimination case where both terms are true simultaneously), `higher_lower.hk` (a real higher/lower guessing game using `if`/`else if`/`else` to print a hint after every wrong guess — nested `if`s inside the `else` branch skip the hint entirely on the winning guess, a fix for the "iteration ordering" bug that showed up when the naive version printed a misleading hint on the correct guess itself), and `while_demo.hk` (two counting loops proving `while`'s inverted polarity against `until` — a single-term `while a1 less than ten`, and a multi-term `while a1 less than ten and b less than ten` confirming the negation applies to the whole and/or/xor chain at once, not to one term of it).
 ```text
 Set x to zero
 Set y to one quietly

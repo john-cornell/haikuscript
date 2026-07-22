@@ -69,7 +69,7 @@ the line with filler words until it hits its syllable target.
 
 | Role | Words | Notes |
 | ---- | ----- | ----- |
-| **Command** (the verb that starts the instruction) | `set` / `assign` / `remember`, `add`, `loop`, `until` (also starts a loop on its own), `if`, `end`; the random words `dream` / `random` / `something` / `imagine` / `randomly`; the print words `print` / `say` / `speak` / `shout` / `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` / `vocalize` / `articulate`; the input words `ask` / `guess` / `prompt` / `input` | comes first |
+| **Command** (the verb that starts the instruction) | `set` / `assign` / `remember`, `add`, `loop`, `until` / `while` (both also start a loop on their own), `if`, `end`; the random words `dream` / `random` / `something` / `imagine` / `randomly`; the print words `print` / `say` / `speak` / `shout` / `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` / `vocalize` / `articulate`; the input words `ask` / `guess` / `prompt` / `input` | comes first |
 | **Variable** (the thing acted on) | `x`, `y`, `z`, `count`, **or any 1-2 character name starting with a letter** (`a`, `g`, `r3`, `ww`, …) | not a fixed list — see below |
 | **Number** | spelled (`zero`, `one`, `ten`, …) or digits (`0`, `42`, …) | literals of any size |
 | **Connector** (glue the pattern needs) | `to`, `until`, `equals` | fixed position |
@@ -126,6 +126,19 @@ misordered variable from a misordered number.
 loop too. `Loop until x equals ten` and `Until x equals ten` parse identically;
 use whichever fits the line's meter.
 
+**`while` also starts a loop on its own, but with the opposite polarity from
+`until`.** `until X` continues while X is *false*, exiting the instant it becomes
+true; `while X` continues while X is *true*, exiting the instant it becomes false
+— the real English meaning of each word, not an arbitrary choice. `While a1 is
+less than ten` counts up until `a1` reaches ten, same observable behavior as
+`Until a1 equals ten`, but for a genuinely different reason (one exits on
+"is no longer true," the other on "has become true"). The negation this needs
+applies to the **whole combined condition once**, after every `and`/`or`/`xor` has
+already been folded together — never to one term of a multi-term chain, since De
+Morgan's laws mean negating a single term doesn't negate the chain's result.
+`While a1 less than ten and b less than ten` correctly keeps looping only while
+*both* hold, exiting the instant *either* fails — not just when the first one does.
+
 ### 3b. The line patterns
 
 Using ⟨…⟩ to mean “put a word of this role here”:
@@ -140,7 +153,8 @@ Using ⟨…⟩ to mean “put a word of this role here”:
 | Print a value | `⟨print⟩ ⟨number \| variable⟩` | `Print the x` |
 | Read a value in | `set ⟨variable⟩ to ⟨input⟩` | `Set g to input` |
 | Read a value in (verb form) | `⟨input⟩ ⟨variable⟩` | `Guess the g` |
-| Start a loop | `(loop until\|until) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ [(and\|or\|xor) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩]…` | `Loop until count equals ten`, `Until x equals zero`, `Loop until not x less y`, `Loop until x equals 3 and a equals b` |
+| Start a loop (runs while false) | `(loop until\|until) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ [(and\|or\|xor) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩]…` | `Loop until count equals ten`, `Until x equals zero`, `Loop until not x less y`, `Loop until x equals 3 and a equals b` |
+| Start a loop (runs while true) | `while [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ […]` | `While a1 is less than ten` |
 | End a loop | `end loop` | `Gently end the loop` |
 | Branch once | `if [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ […]` | `If x more than 4` |
 | Branch with alternative | `if …  else …  end if` | `If g more than s / Else print the 1 / End the if` |
@@ -168,7 +182,7 @@ of writing HaikuScript.
 ### 3d. Rules of thumb
 
 - **Command word first.** Every instruction begins with `set`, `add`, `loop` (or a
-  bare `until`), `if`, `end`, a random word, a print word, or an input word.
+  bare `until`/`while`), `if`, `end`, a random word, a print word, or an input word.
 - **`to` separates the two operands** in `set … to …` and `add … to …` (and is
   optional in the print/input patterns).
 - **A loop is two lines apart:** `loop until … equals …` opens it; `end loop`
@@ -199,7 +213,8 @@ Every word must appear here or you get
 | `TO`         | `to` (1)                                                                                                      | separator in `set … to …` / `add … to …` |
 | `ADD`        | `add` (1)                                                                                                     | begin an addition |
 | `LOOP`       | `loop` (1)                                                                                                    | begin / end a loop |
-| `UNTIL`      | `until` (2)                                                                                                   | loop condition intro — also starts a loop **on its own**, without a preceding `loop` |
+| `UNTIL`      | `until` (2)                                                                                                   | loop condition intro — also starts a loop **on its own**, without a preceding `loop`; runs while the condition is **false** |
+| `WHILE`      | `while` (1)                                                                                                   | starts a loop on its own; runs while the condition is **true** (opposite polarity from `until`, see §3a) |
 | `IF`         | `if` (1)                                                                                                      | begin / end a conditional (runs its body once, or not at all) |
 | `ELSE`       | `else` (2)                                                                                                    | introduces an `if`'s alternative body |
 | `EQ`         | `equals` (2)                                                                                                  | `==` in a comparison |
@@ -248,6 +263,13 @@ After the syllable audit, the meaningful tokens are parsed into statements:
   precedence. Either side of any term can be a number or a variable — comparing two
   variables (`loop until g equals s`) is what lets a "keep guessing until it
   matches the secret" program work.
+- **`while <condition>` … `end loop`** → the same `WhileLoopStatement`, same
+  condition grammar, but runs the body while the condition is **true**, exiting
+  the instant it becomes false — opposite polarity from `until`, matching the real
+  English meaning of "while." Implemented as one `invert` flag on the condition:
+  after the whole `and`/`or`/`xor` chain is combined into a single 0/1 value,
+  `while` negates that combined result once (never per-term — negating one term
+  of a multi-term chain doesn't negate the chain via De Morgan's laws).
 - **`if <condition> ... [else ...] end if`** → run the `then` body once if the
   condition is true, otherwise run the (optional) `else` body once, otherwise do
   nothing. Same condition grammar as `loop`, reused verbatim. Nesting needs no
@@ -350,9 +372,12 @@ More worked examples live under `src/`: `named_vars.hk` and `syllable_check.hk`
 matches a random secret, then reports how many tries it took, with no hints),
 `comparisons_demo.hk` (all six comparison/logical words — `less`/`more`, `not`,
 `and`/`or`/`xor` — each in its own self-contained counting loop with a predictable
-printed result), and `higher_lower.hk` (a real higher/lower guessing game, using
+printed result), `higher_lower.hk` (a real higher/lower guessing game, using
 `if`/`else if`/`else` to print a hint after every wrong guess — the payoff for
-adding `if` on top of `loop`'s comparisons).
+adding `if` on top of `loop`'s comparisons), and `while_demo.hk` (two counting
+loops proving `while`'s inverted polarity — a single-term `while a1 less than
+ten`, and a multi-term `while a1 less than ten and b less than ten` confirming
+the negation applies to the whole chain, not one term).
 
 ---
 

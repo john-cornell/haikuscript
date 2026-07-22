@@ -77,6 +77,8 @@
 
     "until": { syllables: 2, type: "UNTIL" },
 
+    "while": { syllables: 1, type: "WHILE" },
+
     "xor": { syllables: 1, type: "XOR" }
   };
 
@@ -333,15 +335,21 @@
         const target = tokens[current++];
         return { type: "InputStatement", target: target.value };
       }
-      if (token.type === "LOOP" || token.type === "UNTIL") {
+      if (token.type === "LOOP" || token.type === "UNTIL" || token.type === "WHILE") {
         // "until" implies a loop on its own — "loop" is just the explicit form.
-        // Consumes whichever token triggered entry, then optionally skips a
-        // following UNTIL (only present when LOOP started it): "Loop until x
-        // equals y" and bare "Until x equals y" both land here and parse the
-        // same way.
+        // "while" also starts a loop, but with OPPOSITE polarity: "until X"
+        // continues while X is false, exiting the instant it's true; "while X"
+        // continues while X is true, exiting the instant it's false — the
+        // natural English meaning of each word, not an arbitrary choice (same
+        // reasoning as assign/set/remember's differing argument order). The
+        // invert flag lets codegen negate the WHOLE combined condition once,
+        // after and/or/xor are folded together — never per-term, since De
+        // Morgan's laws mean negating one term of a multi-term chain doesn't
+        // negate the chain's result.
+        const invert = token.type === "WHILE";
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
         const terms = parseCondition();
-        const node = { type: "WhileLoopStatement", condition: { terms }, body: [] };
+        const node = { type: "WhileLoopStatement", condition: { terms, invert }, body: [] };
 
         while (current < tokens.length && tokens[current].type !== "END") {
           const stmt = parseAST();
@@ -470,6 +478,9 @@
         let out = `${indent}block\n${indent}loop\n`;
         indent += "  ";
         out += emitCondition(node.condition.terms);
+        // "while" negates the whole combined condition once, here — after
+        // and/or/xor are folded, never per-term (see the parser's LOOP branch).
+        if (node.condition.invert) out += `${indent}i32.eqz\n`;
         out += `${indent}br_if 1\n`;
         node.body.forEach(c => { out += walk(c); });
         out += `${indent}br 0\n`;
