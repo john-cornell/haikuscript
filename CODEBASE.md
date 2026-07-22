@@ -157,7 +157,8 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     "above": { syllables: 2, type: "GT" },
     "not": { syllables: 1, type: "NOT" },
     "and": { syllables: 1, type: "AND" }, "or": { syllables: 1, type: "OR" },
-    "xor": { syllables: 1, type: "XOR" }
+    "xor": { syllables: 1, type: "XOR" },
+    "if": { syllables: 1, type: "IF" }, "else": { syllables: 2, type: "ELSE" }
   };
 
   const EXPECTED_METER = [5, 7, 5];
@@ -400,7 +401,12 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         const target = tokens[current++];
         return { type: "InputStatement", target: target.value };
       }
-      if (token.type === "LOOP") {
+      if (token.type === "LOOP" || token.type === "UNTIL") {
+        // "until" implies a loop on its own — "loop" is just the explicit form.
+        // Consumes whichever token triggered entry, then optionally skips a
+        // following UNTIL (only present when LOOP started it): "Loop until x
+        // equals y" and bare "Until x equals y" both land here and parse the
+        // same way.
         current++; if (tokens[current] && tokens[current].type === "UNTIL") current++;
         const terms = parseCondition();
         const node = { type: "WhileLoopStatement", condition: { terms }, body: [] };
@@ -411,6 +417,26 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         }
         current++; // Skip END
         if (current < tokens.length && tokens[current].type === "LOOP") current++; // Skip trailing LOOP
+        return node;
+      }
+      if (token.type === "IF") {
+        current++;
+        const terms = parseCondition();
+        const node = { type: "IfStatement", condition: { terms }, thenBody: [], elseBody: [] };
+
+        while (current < tokens.length && tokens[current].type !== "END" && tokens[current].type !== "ELSE") {
+          const stmt = parseAST();
+          if (stmt) node.thenBody.push(stmt);
+        }
+        if (current < tokens.length && tokens[current].type === "ELSE") {
+          current++; // Skip ELSE
+          while (current < tokens.length && tokens[current].type !== "END") {
+            const stmt = parseAST();
+            if (stmt) node.elseBody.push(stmt);
+          }
+        }
+        current++; // Skip END
+        if (current < tokens.length && tokens[current].type === "IF") current++; // Skip trailing IF
         return node;
       }
       current++;
@@ -448,6 +474,13 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         if (typeof term.right === 'string') names.add(term.right);
       });
       node.body.forEach(child => collectIdentifiers(child, names));
+    } else if (node.type === "IfStatement") {
+      node.condition.terms.forEach(term => {
+        if (typeof term.left === 'string') names.add(term.left);
+        if (typeof term.right === 'string') names.add(term.right);
+      });
+      node.thenBody.forEach(child => collectIdentifiers(child, names));
+      node.elseBody.forEach(child => collectIdentifiers(child, names));
     }
   }
 
@@ -510,6 +543,24 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
         out += `${indent}br 0\n`;
         indent = indent.substring(0, indent.length - 2);
         return out + `${indent}end\n${indent}end\n`;
+      }
+      if (node.type === "IfStatement") {
+        // WASM's structured if/else/end pops the top-of-stack 0/1 directly —
+        // emitCondition already leaves exactly that, so this is a near-literal
+        // translation, unlike WhileLoopStatement's block/loop/br_if dance.
+        let out = emitCondition(node.condition.terms);
+        out += `${indent}if\n`;
+        indent += "  ";
+        node.thenBody.forEach(c => { out += walk(c); });
+        indent = indent.substring(0, indent.length - 2);
+        if (node.elseBody.length) {
+          out += `${indent}else\n`;
+          indent += "  ";
+          node.elseBody.forEach(c => { out += walk(c); });
+          indent = indent.substring(0, indent.length - 2);
+        }
+        out += `${indent}end\n`;
+        return out;
       }
       return "";
     }
@@ -1077,7 +1128,7 @@ A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` 
 ```
 
 ## 10. Source Poetry Input Code (`src/fibonacci.hk`)
-All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), `guess_number.hk` (a minimal guessing game combining all of the above — `loop until g equals s` keeps reading guesses until one matches a random secret, then prints the winning guess and how many tries it took), and `comparisons_demo.hk` (five self-contained counting loops exercising `<`, `>`, `and`, `or`, and `xor` — each printing a predictable result that proves the operator behaves correctly, including the `xor`-vs-`or` discrimination case where both terms are true simultaneously).
+All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), `guess_number.hk` (a minimal guessing game combining all of the above — `loop until g equals s` keeps reading guesses until one matches a random secret, then prints the winning guess and how many tries it took, with no hints), `comparisons_demo.hk` (five self-contained counting loops exercising `<`, `>`, `and`, `or`, and `xor` — each printing a predictable result that proves the operator behaves correctly, including the `xor`-vs-`or` discrimination case where both terms are true simultaneously), and `higher_lower.hk` (a real higher/lower guessing game using `if`/`else if`/`else` to print a hint after every wrong guess — nested `if`s inside the `else` branch skip the hint entirely on the winning guess, a fix for the "iteration ordering" bug that showed up when the naive version printed a misleading hint on the correct guess itself).
 ```text
 Set x to zero
 Set y to one quietly

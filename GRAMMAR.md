@@ -69,13 +69,14 @@ the line with filler words until it hits its syllable target.
 
 | Role | Words | Notes |
 | ---- | ----- | ----- |
-| **Command** (the verb that starts the instruction) | `set`, `add`, `loop`, `end`; the random words `dream` / `random` / `something` / `imagine` / `randomly`; the print words `print` / `say` / `speak` / `shout` / `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` / `vocalize` / `articulate`; the input words `ask` / `guess` / `prompt` / `input` | comes first |
+| **Command** (the verb that starts the instruction) | `set`, `add`, `loop`, `until` (also starts a loop on its own), `if`, `end`; the random words `dream` / `random` / `something` / `imagine` / `randomly`; the print words `print` / `say` / `speak` / `shout` / `printout` / `announce` / `declare` / `reveal` / `utter` / `recite` / `vocalize` / `articulate`; the input words `ask` / `guess` / `prompt` / `input` | comes first |
 | **Variable** (the thing acted on) | `x`, `y`, `z`, `count`, **or any 1-2 character name starting with a letter** (`a`, `g`, `r3`, `ww`, …) | not a fixed list — see below |
 | **Number** | spelled (`zero`, `one`, `ten`, …) or digits (`0`, `42`, …) | literals of any size |
 | **Connector** (glue the pattern needs) | `to`, `until`, `equals` | fixed position |
-| **Comparison** (loop condition only, see below) | `equals`; `less` / `under` / `below` (<); `more` / `over` / `above` (>) | one per comparison term |
-| **Negation** (loop condition only) | `not` — negates the single comparison right after it | prefix |
-| **Join** (loop condition only) | `and`, `or`, `xor` — chains another comparison term | between terms |
+| **Comparison** (loop/if condition) | `equals`; `less` / `under` / `below` (<); `more` / `over` / `above` (>) | one per comparison term |
+| **Negation** (loop/if condition) | `not` — negates the single comparison right after it | prefix |
+| **Join** (loop/if condition) | `and`, `or`, `xor` — chains another comparison term | between terms |
+| **Branch** | `else` — introduces the alternative body of an `if` | between bodies |
 | **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `than`, `you`, `should`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
 
 Only the **command, variable, number, and connector** words carry meaning, and they
@@ -92,16 +93,28 @@ from how the name is *spoken*: each character is read as a letter or digit name
 and `ww` = 6. This is an exact lookup table, not a guess — every letter A-Z and
 digit 0-9 has one fixed, unambiguous spoken-syllable count.
 
-**Comparisons and logical joins** only exist inside a loop's `until` condition —
-there's no general-purpose boolean expression usable elsewhere (no `if`, no boolean
-variables). A condition is a **flat chain** of comparisons: `⟨left⟩ ⟨comparison⟩
-⟨right⟩`, optionally prefixed by `not`, optionally continued with `and`/`or`/`xor`
-followed by another comparison term. There's deliberately **no precedence and no
-parentheses** — `x equals 1 and y equals 2 or z equals 3` evaluates strictly left to
-right: `((x==1) and (y==2)) or (z==3)`. Only three base comparisons exist
-(`equals`, `less`/`under`/`below`, `more`/`over`/`above`), but `not` derives the
-rest for free: `not equals` is `!=`, `not less`/`not under`/`not below` is `>=`,
-`not more`/`not over`/`not above` is `<=`.
+**Comparisons and logical joins** exist in exactly two places: a `loop`'s condition
+and an `if`'s condition. Both use the *same* grammar — a **flat chain** of
+comparisons: `⟨left⟩ ⟨comparison⟩ ⟨right⟩`, optionally prefixed by `not`,
+optionally continued with `and`/`or`/`xor` followed by another comparison term.
+There's deliberately **no precedence and no parentheses** — `x equals 1 and y
+equals 2 or z equals 3` evaluates strictly left to right: `((x==1) and (y==2)) or
+(z==3)`. Only three base comparisons exist (`equals`, `less`/`under`/`below`,
+`more`/`over`/`above`), but `not` derives the rest for free: `not equals` is `!=`,
+`not less`/`not under`/`not below` is `>=`, `not more`/`not over`/`not above` is
+`<=`.
+
+**`if`** runs its body **once** if the condition is true, zero times otherwise —
+unlike `loop`, which repeats. An optional `else` gives the alternative body, parsed
+the exact same recursive way as the `then` body, so `if`s nest freely: `else if …`
+reads as plain English and *is* exactly that — `else` followed by a nested `if`.
+There's still no way to compute a condition's value and store or print it directly;
+`if`/`loop` are the only two places a boolean is ever consumed.
+
+**`until` starts a loop on its own** — `loop` is the explicit form, but since
+`until`'s only job is introducing a loop condition, a bare `until` line implies the
+loop too. `Loop until x equals ten` and `Until x equals ten` parse identically;
+use whichever fits the line's meter.
 
 ### 3b. The line patterns
 
@@ -116,8 +129,11 @@ Using ⟨…⟩ to mean “put a word of this role here”:
 | Print a value | `⟨print⟩ ⟨number \| variable⟩` | `Print the x` |
 | Read a value in | `set ⟨variable⟩ to ⟨input⟩` | `Set g to input` |
 | Read a value in (verb form) | `⟨input⟩ ⟨variable⟩` | `Guess the g` |
-| Start a loop | `loop until [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ [(and\|or\|xor) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩]…` | `Loop until count equals ten`, `Loop until x more 4`, `Loop until not x less y`, `Loop until x equals 3 and a equals b` |
+| Start a loop | `(loop until\|until) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ [(and\|or\|xor) [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩]…` | `Loop until count equals ten`, `Until x equals zero`, `Loop until not x less y`, `Loop until x equals 3 and a equals b` |
 | End a loop | `end loop` | `Gently end the loop` |
+| Branch once | `if [not] ⟨left⟩ ⟨comparison⟩ ⟨right⟩ […]` | `If x more than 4` |
+| Branch with alternative | `if …  else …  end if` | `If g more than s / Else print the 1 / End the if` |
+| End an if | `end if` | `End the if it is` |
 
 `to` is optional everywhere it appears above — the parser skips it if present but
 never requires it. It's there for phrasing, not grammar.
@@ -139,13 +155,17 @@ of writing HaikuScript.
 
 ### 3d. Rules of thumb
 
-- **Command word first.** Every instruction begins with `set`, `add`, `loop`, `end`,
-  a random word, a print word, or an input word.
+- **Command word first.** Every instruction begins with `set`, `add`, `loop` (or a
+  bare `until`), `if`, `end`, a random word, a print word, or an input word.
 - **`to` separates the two operands** in `set … to …` and `add … to …` (and is
   optional in the print/input patterns).
 - **A loop is two lines apart:** `loop until … equals …` opens it; `end loop`
   (usually padded, e.g. `Gently end the loop always`) closes it. Everything between
   them is the loop body.
+- **An `if` runs its body once, or not at all** — no repeating. `end if` closes it;
+  an optional `else` in between marks the alternative body. Nesting is just another
+  `if` appearing where a statement is expected, so `else if …` is genuinely `else`
+  followed by a nested `if`, not a special third keyword.
 - **Reach for filler to fix meter**, never to change logic — filler is invisible to
   the compiler.
 - **The final answer is always `x`.** Whatever `x` holds when the program ends is
@@ -167,7 +187,9 @@ Every word must appear here or you get
 | `TO`         | `to` (1)                                                                                                      | separator in `set … to …` / `add … to …` |
 | `ADD`        | `add` (1)                                                                                                     | begin an addition |
 | `LOOP`       | `loop` (1)                                                                                                    | begin / end a loop |
-| `UNTIL`      | `until` (2)                                                                                                   | loop condition intro |
+| `UNTIL`      | `until` (2)                                                                                                   | loop condition intro — also starts a loop **on its own**, without a preceding `loop` |
+| `IF`         | `if` (1)                                                                                                      | begin / end a conditional (runs its body once, or not at all) |
+| `ELSE`       | `else` (2)                                                                                                    | introduces an `if`'s alternative body |
 | `EQ`         | `equals` (2)                                                                                                  | `==` in a comparison |
 | `LT`         | `less` (1), `under` (2), `below` (2)                                                                          | `<` in a comparison |
 | `GT`         | `more` (1), `over` (2), `above` (2)                                                                           | `>` in a comparison |
@@ -175,7 +197,7 @@ Every word must appear here or you get
 | `AND`        | `and` (1)                                                                                                     | chains another comparison term (both must hold) |
 | `OR`         | `or` (1)                                                                                                      | chains another comparison term (either may hold) |
 | `XOR`        | `xor` (1)                                                                                                     | chains another comparison term (exactly one must hold) |
-| `END`        | `end` (1)                                                                                                     | close a loop body |
+| `END`        | `end` (1)                                                                                                     | close a loop or `if` body |
 | `IDENTIFIER` | `x` `y` `z` `count` (1 each, fixed dictionary entries), **or** any 1-2 character alpha-first name — syllables computed from its spoken letters/digits (see §3a) | a variable |
 | `NUMBER`     | spelled (`zero` = 2 → 0, `one` = 1 → 1, `ten` = 1 → 10, …), **or** digits (`0`, `42`, …) — syllables computed algorithmically for any magnitude | integer literals |
 | `RANDOM`     | `dream` (1), `random` (2), `something` (2), `imagine` (3), `randomly` (3)                                      | roll a random 0–99 |
@@ -201,14 +223,22 @@ After the syllable audit, the meaningful tokens are parsed into statements:
   blocks on a synchronous stdin read, the REPL uses `window.prompt`. Values are
   plain `i32` numbers; there's no character type, so a "guess a letter" program has
   to encode letters as numbers (e.g. a code 1–26) rather than reading a literal `A`.
-- **`loop until <condition>` … `end loop`** → run the body while the condition is
-  **false**, exiting the instant it becomes true. A condition is a flat chain of
-  comparison terms: each term is `<left> <op> <right>` (`op` is `eq`/`lt`/`gt`),
-  optionally negated by a leading `not`; terms after the first carry a `join`
-  (`and`/`or`/`xor`) saying how they combine with everything before them, evaluated
-  strictly left to right with no precedence. Either side of any term can be a
-  number or a variable — comparing two variables (`loop until g equals s`) is what
-  lets a "keep guessing until it matches the secret" program work.
+- **`(loop until|until) <condition>` … `end loop`** → run the body while the
+  condition is **false**, exiting the instant it becomes true. A bare `until`
+  (no preceding `loop`) parses identically — `until` alone is enough to start the
+  loop. A condition is a flat chain of comparison terms: each term is
+  `<left> <op> <right>` (`op` is `eq`/`lt`/`gt`), optionally negated by a leading
+  `not`; terms after the first carry a `join` (`and`/`or`/`xor`) saying how they
+  combine with everything before them, evaluated strictly left to right with no
+  precedence. Either side of any term can be a number or a variable — comparing two
+  variables (`loop until g equals s`) is what lets a "keep guessing until it
+  matches the secret" program work.
+- **`if <condition> ... [else ...] end if`** → run the `then` body once if the
+  condition is true, otherwise run the (optional) `else` body once, otherwise do
+  nothing. Same condition grammar as `loop`, reused verbatim. Nesting needs no
+  special handling — the `then`/`else` bodies are parsed by the same statement
+  parser as everything else, so an `if` appearing where a statement is expected
+  (e.g. right after `else`) just recurses naturally.
 - **Filler (`IGNORE`) words** produce no statement at all.
 
 `compute()` returns the final value of **`x`** — `print` only surfaces values
@@ -219,14 +249,16 @@ After the syllable audit, the meaningful tokens are parsed into statements:
 ## 6. What the language cannot do
 
 - **Only addition** — no subtract, multiply, divide, or modulo in the language.
-- **Comparisons and logic only exist inside a loop condition** — `equals`/`less`/`more`,
-  `not`, and `and`/`or`/`xor` chain into the one place a boolean value is ever used
-  (deciding whether a loop exits). There's no `if`, no boolean variable type, and no
-  way to compute a comparison's result and assign or print it directly.
+- **Comparisons and logic only exist in a `loop` or `if` condition** — there's no
+  boolean variable type, and no way to compute a comparison's result and assign or
+  print it directly. `loop`/`if` are the only two places a boolean is ever consumed.
 - **No precedence, no parentheses** — a condition is a flat left-to-right chain;
   `and`/`or`/`xor` are not distinguished by binding strength, and there's no way to
   group a sub-expression. `not` only ever negates the single term right after it,
   never a whole parenthesized group.
+- **No `else if` as a single keyword** — `else if …` works, but only because `else`'s
+  body is parsed the same way as any other body, and an `if` is free to appear there.
+  There's no dedicated "else-if" construct; it's `else` plus ordinary nesting.
 - **No strings or arrays** — every variable is a single `i32` number. A word or a
   sequence of guessed letters can't be represented directly; you'd need one
   variable per letter position, encoded as a number.
@@ -300,12 +332,12 @@ More worked examples live under `src/`: `named_vars.hk` and `syllable_check.hk`
 (short variable names), `ten_randoms.hk` (`print` inside a loop), `input_demo.hk`
 (all four `INPUT` keywords, plus the `ask user` filler phrase), `guess_number.hk`
 (a minimal guessing game — `loop until g equals s` keeps reading guesses until one
-matches a random secret, then reports how many tries it took), and
+matches a random secret, then reports how many tries it took, with no hints),
 `comparisons_demo.hk` (all six comparison/logical words — `less`/`more`, `not`,
 `and`/`or`/`xor` — each in its own self-contained counting loop with a predictable
-printed result). Note that comparisons only exist inside a loop condition (§3a),
-so `guess_number.hk` still can't give higher/lower hints even with `<`/`>` now
-available — it's "keep guessing," not a classic number-guessing game.
+printed result), and `higher_lower.hk` (a real higher/lower guessing game, using
+`if`/`else if`/`else` to print a hint after every wrong guess — the payoff for
+adding `if` on top of `loop`'s comparisons).
 
 ---
 
