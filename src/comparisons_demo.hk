@@ -19,7 +19,7 @@ Quietly suddenly it
 Quietly it is
 
 Set x to zero
-Loop x equals zero it
+Until x equals zero
 xor a equals b
 
 You add one to x
