@@ -129,6 +129,8 @@ Gently it is done
 
 **`set`, `assign`, and `remember`** all assign a value, but not in the same word order — each follows how the verb actually reads in English rather than sharing one grammar. `set`/`remember` are target-first (`Set x to zero`, `Remember x is now twelve`); `assign` is value-first (`Assign ten to x`). Which word opens the line decides how the rest of it is read, so swapping a target-first phrasing onto `assign` (or vice versa) silently reads the wrong word as the variable — there's no error, just the wrong AST. `to` is optional for all three, same as everywhere else it appears: `Set x 12` and `Set x to 12` parse identically.
 
+**A poem must end on a complete stanza** — the total count of non-blank code lines has to be a multiple of 3, or you get `Incomplete stanza`, same error category as `Poetic meter broken`. This is checked once at the end, after every line has already passed on its own; it's the one check that looks at the whole poem's shape rather than a single line. Also added `please` (1 syl) as filler, alongside `now`/`than`/`you`/`should`/`done`/`out`.
+
 > How it works: `repl.html` loads the shared compiler core (`haiku-core.js`) plus the browser build of `wabt` straight from `node_modules/`. The CLI (`haiku.js`) and the REPL share the exact same core, so they can never disagree.
 
 ---

@@ -43,6 +43,11 @@ generator in the run path:
 - Every line is scored against a repeating meter, `5, 7, 5`, that cycles every three
   code lines. Each word has a fixed syllable count; a line's words must total exactly
   its target or you get `Poetic meter broken`. Blank lines are not code and are skipped.
+- **A poem must end on a complete stanza** — the total count of non-blank code lines
+  has to be a multiple of 3, or you get `Incomplete stanza`. This is checked once,
+  after every individual line has already passed its own meter check — each line
+  only ever answers to its own position in the 5/7/5 cycle, so this is the one
+  check that looks at the *shape* of the whole poem instead of one line at a time.
 
 The hand lexer is essentially:
 
@@ -77,7 +82,7 @@ the line with filler words until it hits its syllable target.
 | **Negation** (loop/if condition) | `not` — negates the single comparison right after it | prefix |
 | **Join** (loop/if condition) | `and`, `or`, `xor` — chains another comparison term | between terms |
 | **Branch** | `else` — introduces the alternative body of an `if` | between bodies |
-| **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `than`, `you`, `should`, `done`, `out`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
+| **Filler** (meaning-free padding) | `the`, `is`, `it`, `now`, `than`, `you`, `should`, `done`, `out`, `please`, `user`, `gently`, `quietly`, `suddenly`, `always`, `beautifully`, `telling`, `sequence` | dropped before the program runs |
 
 Only the **command, variable, number, and connector** words carry meaning, and they
 must appear in the right order. **Filler words are discarded before the program is
@@ -230,7 +235,7 @@ Every word must appear here or you get
 | `RANDOM`     | `dream` (1), `random` (2), `something` (2), `imagine` (3), `randomly` (3)                                      | roll a random 0–99 |
 | `PRINT`      | `print` `say` `speak` `shout` (1), `printout` `announce` `declare` `reveal` `utter` `recite` (2), `vocalize` (3), `articulate` (4) | surface a value mid-run (see §5) |
 | `INPUT`      | `ask` `guess` `prompt` (1), `input` (2)                                                                       | read a value in from the host (see §5) |
-| `IGNORE`     | `the` `is` `it` `now` `than` `you` `should` `done` `out` (1), `user` `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
+| `IGNORE`     | `the` `is` `it` `now` `than` `you` `should` `done` `out` `please` (1), `user` `gently` `always` `telling` (2), `quietly` `suddenly` `sequence` (3), `beautifully` (4)  | filler — syllables only, no logic |
 
 ---
 

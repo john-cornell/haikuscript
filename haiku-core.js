@@ -40,7 +40,7 @@
     "done": { syllables: 1, type: "IGNORE" }, "gently": { syllables: 2, type: "IGNORE" },
     "is": { syllables: 1, type: "IGNORE" }, "it": { syllables: 1, type: "IGNORE" },
     "now": { syllables: 1, type: "IGNORE" }, "out": { syllables: 1, type: "IGNORE" },
-    "quietly": { syllables: 3, type: "IGNORE" },
+    "please": { syllables: 1, type: "IGNORE" }, "quietly": { syllables: 3, type: "IGNORE" },
     "sequence": { syllables: 3, type: "IGNORE" }, "should": { syllables: 1, type: "IGNORE" },
     "suddenly": { syllables: 3, type: "IGNORE" }, "telling": { syllables: 2, type: "IGNORE" },
     "than": { syllables: 1, type: "IGNORE" }, "the": { syllables: 1, type: "IGNORE" },
@@ -190,6 +190,7 @@
   function tokenize(source) {
     const tokens = [];
     let lineIndex = 0;
+    let lastLineNum = 0;
 
     const lines = source.split('\n');
     for (let row = 0; row < lines.length; row++) {
@@ -198,6 +199,7 @@
       if (!words) continue; // blank / word-less line — not a code line
 
       const currentLineNum = row + 1;
+      lastLineNum = currentLineNum;
       const expected = EXPECTED_METER[lineIndex % 3];
       let runningSyllables = 0;
 
@@ -243,6 +245,15 @@
         throw new HaikuError(currentLineNum, `Poetic meter broken. Expected ${expected} syllables, but calculated ${runningSyllables}.`);
       }
       lineIndex++;
+    }
+
+    // A stanza is three lines; a poem that ends mid-stanza still tokenizes
+    // fine line-by-line (each line only answers to its own position in the
+    // repeating meter), so this is the one check that looks at the *shape*
+    // of the whole poem rather than one line at a time.
+    if (lineIndex % 3 !== 0) {
+      const linesShort = 3 - (lineIndex % 3);
+      throw new HaikuError(lastLineNum, `Incomplete stanza — the poem ends ${linesShort} line${linesShort === 1 ? '' : 's'} short of a full 3-line stanza.`);
     }
 
     return tokens;
