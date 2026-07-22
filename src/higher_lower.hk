@@ -1,22 +1,22 @@
 Set s to something
 Set count to zero gently
-Quietly it is
+Gently it is done
 
 Loop g equals s
-Guess the g it is gently
+You should guess the g gently
 Add one to the count
 
 If g equals s
 Else if g more than s
-Print the 2 it is
+Now you print the 2
 
 Else print the 1
-End the if it is gently
-End the if it is
+You should end the if gently
+Now you end the if
 
 End the loop always
-Quietly suddenly it
+Quietly it is done now
 
 Print the g gently
 Print the count gently
-Quietly suddenly it
+Quietly it is done now

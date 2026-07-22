@@ -20,7 +20,7 @@
     '',
     'Add one to the count',
     'Gently end the loop always',
-    'Quietly it is'
+    'Gently it is done'
   ].join('\n');
 
   const $ = (id) => document.getElementById(id);

@@ -2,9 +2,9 @@ Set x to zero
 Loop until x more than 4
 You add one to x
 
-End the loop it is
-Print the x it is gently
-Quietly it is
+Now you end the loop
+You should print out the x now
+Gently it is done
 
 Set x to zero
 Loop until x equals 3
@@ -12,11 +12,11 @@ and a equals b
 
 You add one to x
 Gently end the loop always
-Quietly it is
+Gently it is done
 
 Print the x gently
-Quietly suddenly it
-Quietly it is
+Quietly it is done now
+Gently it is done
 
 Set x to zero
 Until x equals zero
@@ -24,11 +24,11 @@ xor a equals b
 
 You add one to x
 Gently end the loop always
-Quietly it is
+Gently it is done
 
 Print the x gently
-Quietly suddenly it
-Quietly it is
+Quietly it is done now
+Gently it is done
 
 Set x to zero
 Loop until x equals 5
@@ -36,18 +36,18 @@ or a equals b
 
 You add one to x
 Gently end the loop always
-Quietly it is
+Gently it is done
 
 Print the x gently
-Quietly suddenly it
-Quietly it is
+Quietly it is done now
+Gently it is done
 
 Set x to zero
 Set the y to 5 gently
-Quietly it is
+Gently it is done
 
 Loop not x less y
 You should add one to x now
-End the loop it is
+Now you end the loop
 
 Print the x gently

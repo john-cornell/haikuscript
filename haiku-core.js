@@ -11,46 +11,72 @@
   'use strict';
 
   // Master vocabulary database mapping keywords to syllables and token actions
+  // Grouped by token type, alphabetical within each group.
   const VOCAB = {
-    "loop": { syllables: 1, type: "LOOP" }, "until": { syllables: 2, type: "UNTIL" },
-    "equals": { syllables: 2, type: "EQ" }, "end": { syllables: 1, type: "END" },
-    "set": { syllables: 1, type: "ASSIGN" }, "to": { syllables: 1, type: "TO" },
     "add": { syllables: 1, type: "ADD" },
+
+    "and": { syllables: 1, type: "AND" },
+
+    "set": { syllables: 1, type: "ASSIGN" },
+
+    "else": { syllables: 2, type: "ELSE" },
+
+    "end": { syllables: 1, type: "END" },
+
+    "equals": { syllables: 2, type: "EQ" },
+
+    "above": { syllables: 2, type: "GT" }, "more": { syllables: 1, type: "GT" },
+    "over": { syllables: 2, type: "GT" },
+
+    "count": { syllables: 1, type: "IDENTIFIER", value: "count" },
     "x": { syllables: 1, type: "IDENTIFIER", value: "x" },
     "y": { syllables: 1, type: "IDENTIFIER", value: "y" },
     "z": { syllables: 1, type: "IDENTIFIER", value: "z" },
-    "count": { syllables: 1, type: "IDENTIFIER", value: "count" },
-    "zero": { syllables: 2, type: "NUMBER", value: 0 },
+
+    "if": { syllables: 1, type: "IF" },
+
+    "always": { syllables: 2, type: "IGNORE" }, "beautifully": { syllables: 4, type: "IGNORE" },
+    "done": { syllables: 1, type: "IGNORE" }, "gently": { syllables: 2, type: "IGNORE" },
+    "is": { syllables: 1, type: "IGNORE" }, "it": { syllables: 1, type: "IGNORE" },
+    "now": { syllables: 1, type: "IGNORE" }, "out": { syllables: 1, type: "IGNORE" },
+    "quietly": { syllables: 3, type: "IGNORE" },
+    "sequence": { syllables: 3, type: "IGNORE" }, "should": { syllables: 1, type: "IGNORE" },
+    "suddenly": { syllables: 3, type: "IGNORE" }, "telling": { syllables: 2, type: "IGNORE" },
+    "than": { syllables: 1, type: "IGNORE" }, "the": { syllables: 1, type: "IGNORE" },
+    "user": { syllables: 2, type: "IGNORE" }, "you": { syllables: 1, type: "IGNORE" },
+
+    "ask": { syllables: 1, type: "INPUT" }, "guess": { syllables: 1, type: "INPUT" },
+    "input": { syllables: 2, type: "INPUT" }, "prompt": { syllables: 1, type: "INPUT" },
+
+    "loop": { syllables: 1, type: "LOOP" },
+
+    "below": { syllables: 2, type: "LT" }, "less": { syllables: 1, type: "LT" },
+    "under": { syllables: 2, type: "LT" },
+
+    "not": { syllables: 1, type: "NOT" },
+
     "one": { syllables: 1, type: "NUMBER", value: 1 },
     "ten": { syllables: 1, type: "NUMBER", value: 10 },
-    "the": { syllables: 1, type: "IGNORE" }, "is": { syllables: 1, type: "IGNORE" },
-    "it": { syllables: 1, type: "IGNORE" }, "now": { syllables: 1, type: "IGNORE" },
-    "than": { syllables: 1, type: "IGNORE" },
-    "you": { syllables: 1, type: "IGNORE" }, "should": { syllables: 1, type: "IGNORE" },
-    "quietly": { syllables: 3, type: "IGNORE" },
-    "gently": { syllables: 2, type: "IGNORE" }, "suddenly": { syllables: 3, type: "IGNORE" },
-    "always": { syllables: 2, type: "IGNORE" }, "beautifully": { syllables: 4, type: "IGNORE" },
-    "telling": { syllables: 2, type: "IGNORE" }, "sequence": { syllables: 3, type: "IGNORE" },
+    "zero": { syllables: 2, type: "NUMBER", value: 0 },
+
+    "or": { syllables: 1, type: "OR" },
+
+    "announce": { syllables: 2, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" },
+    "declare": { syllables: 2, type: "PRINT" }, "print": { syllables: 1, type: "PRINT" },
+    "printout": { syllables: 2, type: "PRINT" }, "recite": { syllables: 2, type: "PRINT" },
+    "reveal": { syllables: 2, type: "PRINT" }, "say": { syllables: 1, type: "PRINT" },
+    "shout": { syllables: 1, type: "PRINT" }, "speak": { syllables: 1, type: "PRINT" },
+    "utter": { syllables: 2, type: "PRINT" }, "vocalize": { syllables: 3, type: "PRINT" },
+
     "dream": { syllables: 1, type: "RANDOM" }, "imagine": { syllables: 3, type: "RANDOM" },
     "random": { syllables: 2, type: "RANDOM" }, "randomly": { syllables: 3, type: "RANDOM" },
     "something": { syllables: 2, type: "RANDOM" },
-    "print": { syllables: 1, type: "PRINT" }, "say": { syllables: 1, type: "PRINT" },
-    "speak": { syllables: 1, type: "PRINT" }, "shout": { syllables: 1, type: "PRINT" },
-    "printout": { syllables: 2, type: "PRINT" }, "announce": { syllables: 2, type: "PRINT" },
-    "declare": { syllables: 2, type: "PRINT" }, "reveal": { syllables: 2, type: "PRINT" },
-    "utter": { syllables: 2, type: "PRINT" }, "recite": { syllables: 2, type: "PRINT" },
-    "vocalize": { syllables: 3, type: "PRINT" }, "articulate": { syllables: 4, type: "PRINT" },
-    "ask": { syllables: 1, type: "INPUT" }, "guess": { syllables: 1, type: "INPUT" },
-    "prompt": { syllables: 1, type: "INPUT" }, "input": { syllables: 2, type: "INPUT" },
-    "user": { syllables: 2, type: "IGNORE" },
-    "less": { syllables: 1, type: "LT" }, "under": { syllables: 2, type: "LT" },
-    "below": { syllables: 2, type: "LT" },
-    "more": { syllables: 1, type: "GT" }, "over": { syllables: 2, type: "GT" },
-    "above": { syllables: 2, type: "GT" },
-    "not": { syllables: 1, type: "NOT" },
-    "and": { syllables: 1, type: "AND" }, "or": { syllables: 1, type: "OR" },
-    "xor": { syllables: 1, type: "XOR" },
-    "if": { syllables: 1, type: "IF" }, "else": { syllables: 2, type: "ELSE" }
+
+    "to": { syllables: 1, type: "TO" },
+
+    "until": { syllables: 2, type: "UNTIL" },
+
+    "xor": { syllables: 1, type: "XOR" }
   };
 
   const EXPECTED_METER = [5, 7, 5];
