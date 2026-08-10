@@ -60,6 +60,7 @@
     $('tokens').textContent = '';
     $('ast').textContent = '';
     $('wat').textContent = '';
+    $('il').textContent = '';
     $('printed').textContent = '';
 
     try {
@@ -74,9 +75,12 @@
       const ast = HaikuCore.parseProgram(tokens);
       $('ast').textContent = JSON.stringify(ast, null, 2);
 
-      setStatus('Phase 3 — generating WAT & assembling WASM…', 'busy');
-      const wat = HaikuCore.generateWat(ast, Date.now());
+      setStatus('Phase 3 — generating WAT & CIL, assembling WASM…', 'busy');
+      const seed = Date.now();
+      const wat = HaikuCore.generateWat(ast, seed);
       $('wat').textContent = wat;
+      const il = HaikuCore.generateIl(ast, seed);
+      $('il').textContent = il;
 
       const module = wabt.parseWat('repl.wat', wat);
       const { buffer } = module.toBinary({});
