@@ -539,5 +539,125 @@
     return `(module\n  (import "env" "print" (func $print (param i32)))\n  (import "env" "input" (func $input (result i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
   }
 
-  return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat };
+  // PHASE 3b: Code Generation — turn the AST into an ildasm-style CIL
+  // disassembly listing (text only: nothing is assembled into a real .dll,
+  // and nothing here executes). Walks the exact same AST as generateWat via
+  // a parallel walk()/emitCondition() pair, so the two backends are easy to
+  // compare instruction-by-instruction. See
+  // docs/superpowers/specs/2026-08-10-il-backend-design.md.
+  function generateIl(ast, seed) {
+    const RNG_SEED = ((seed >>> 0) || 0x9E3779B9);
+    const RNG_SEED_SIGNED = RNG_SEED > 0x7FFFFFFF ? RNG_SEED - 0x100000000 : RNG_SEED;
+
+    const localNames = new Set(['x']); // Compute() always returns x
+    ast.body.forEach(n => collectIdentifiers(n, localNames));
+    const localList = Array.from(localNames);
+    const localIndex = new Map(localList.map((name, i) => [name, i]));
+
+    let nextLabel = 0;
+    function newLabel() { return `L${nextLabel++}`; }
+
+    function ldc(instrs, value) {
+      if (value === -1) instrs.push({ op: 'ldc.i4.m1' });
+      else if (value >= 0 && value <= 8) instrs.push({ op: `ldc.i4.${value}` });
+      else if (value >= -128 && value <= 127) instrs.push({ op: 'ldc.i4.s', arg: value });
+      else instrs.push({ op: 'ldc.i4', arg: value });
+    }
+    function ldlocSlot(instrs, slot, comment) {
+      if (slot <= 3) instrs.push({ op: `ldloc.${slot}`, comment });
+      else instrs.push({ op: 'ldloc.s', arg: slot, comment });
+    }
+    function stlocSlot(instrs, slot, comment) {
+      if (slot <= 3) instrs.push({ op: `stloc.${slot}`, comment });
+      else instrs.push({ op: 'stloc.s', arg: slot, comment });
+    }
+    function ldloc(instrs, name) { ldlocSlot(instrs, localIndex.get(name), name); }
+    function stloc(instrs, name) { stlocSlot(instrs, localIndex.get(name), name); }
+    function pushOperand(instrs, operand) {
+      if (typeof operand === 'number') ldc(instrs, operand);
+      else ldloc(instrs, operand);
+    }
+
+    function walk(instrs, node) {
+      if (!node) return;
+      if (node.type === 'AssignmentStatement') {
+        pushOperand(instrs, node.value);
+        stloc(instrs, node.target);
+        return;
+      }
+      if (node.type === 'AdditionStatement') {
+        ldloc(instrs, node.target);
+        pushOperand(instrs, node.source);
+        instrs.push({ op: 'add' });
+        stloc(instrs, node.target);
+        return;
+      }
+    }
+
+    const bodyInstrs = [];
+    ast.body.forEach(n => walk(bodyInstrs, n));
+    ldloc(bodyInstrs, 'x');
+    bodyInstrs.push({ op: 'ret' });
+
+    // ---- Byte-size + address resolution ----------------------------------
+    const OPCODE_SIZE = {
+      'ldc.i4.m1': 1, 'ldc.i4.0': 1, 'ldc.i4.1': 1, 'ldc.i4.2': 1, 'ldc.i4.3': 1,
+      'ldc.i4.4': 1, 'ldc.i4.5': 1, 'ldc.i4.6': 1, 'ldc.i4.7': 1, 'ldc.i4.8': 1,
+      'ldc.i4.s': 2, 'ldc.i4': 5,
+      'ldloc.0': 1, 'ldloc.1': 1, 'ldloc.2': 1, 'ldloc.3': 1, 'ldloc.s': 2,
+      'stloc.0': 1, 'stloc.1': 1, 'stloc.2': 1, 'stloc.3': 1, 'stloc.s': 2,
+      add: 1, ceq: 1, clt: 1, cgt: 1, and: 1, or: 1, xor: 1, ret: 1,
+      shl: 1, 'shr.un': 1, 'rem.un': 1,
+      'brfalse.s': 2, 'brtrue.s': 2, 'br.s': 2,
+      call: 5, ldsfld: 5, stsfld: 5
+    };
+
+    function resolveAddresses(instrs) {
+      const labelAddr = new Map();
+      let addr = 0;
+      instrs.forEach(instr => {
+        if (instr.label !== undefined) { labelAddr.set(instr.label, addr); return; }
+        instr.addr = addr;
+        addr += OPCODE_SIZE[instr.op];
+      });
+      return labelAddr;
+    }
+
+    function hex4(n) { return 'IL_' + n.toString(16).padStart(4, '0'); }
+
+    const BRANCH_OPS = new Set(['br.s', 'brfalse.s', 'brtrue.s']);
+    function renderInstrs(instrs, labelAddr, indent) {
+      let out = '';
+      instrs.forEach(instr => {
+        if (instr.label !== undefined) return;
+        let line = `${indent}${hex4(instr.addr)}: ${instr.op}`;
+        if (BRANCH_OPS.has(instr.op)) line += ` ${hex4(labelAddr.get(instr.arg))}`;
+        else if (instr.arg !== undefined) line += ` ${instr.arg}`;
+        if (instr.comment) line += ` // ${instr.comment}`;
+        out += line + '\n';
+      });
+      return out;
+    }
+
+    const bodyLabelAddr = resolveAddresses(bodyInstrs);
+    const bodyText = renderInstrs(bodyInstrs, bodyLabelAddr, '    ');
+    const localsDecl = localList.map((name, i) => `        [${i}] int32 ${name}`).join(',\n');
+
+    return (
+      '// ildasm-style disassembly emitted directly by HaikuScript — illustrative text\n' +
+      '// only: not assembled into a real module, and not executed.\n' +
+      '.class private auto ansi HaikuProgram\n' +
+      '       extends [mscorlib]System.Object\n' +
+      '{\n' +
+      '  .method public hidebysig static int32 Compute() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n' +
+      '    .locals init (\n' + localsDecl + '\n    )\n\n' +
+      bodyText +
+      '  } // end of method HaikuProgram::Compute\n\n' +
+      '} // end of class HaikuProgram\n'
+    );
+  }
+
+  return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat, generateIl };
 });
