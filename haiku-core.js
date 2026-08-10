@@ -606,7 +606,7 @@
       'ldc.i4.s': 2, 'ldc.i4': 5,
       'ldloc.0': 1, 'ldloc.1': 1, 'ldloc.2': 1, 'ldloc.3': 1, 'ldloc.s': 2,
       'stloc.0': 1, 'stloc.1': 1, 'stloc.2': 1, 'stloc.3': 1, 'stloc.s': 2,
-      add: 1, ceq: 1, clt: 1, cgt: 1, and: 1, or: 1, xor: 1, ret: 1,
+      add: 1, ceq: 2, clt: 2, cgt: 2, and: 1, or: 1, xor: 1, ret: 1,
       shl: 1, 'shr.un': 1, 'rem.un': 1,
       'brfalse.s': 2, 'brtrue.s': 2, 'br.s': 2,
       call: 5, ldsfld: 5, stsfld: 5
