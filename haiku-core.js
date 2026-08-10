@@ -578,6 +578,21 @@
       else ldloc(instrs, operand);
     }
 
+    const REL_OP = { eq: 'ceq', lt: 'clt', gt: 'cgt' };
+    const JOIN_OP = { and: 'and', or: 'or', xor: 'xor' };
+
+    // Mirrors generateWat's emitCondition: flat and/or/xor chain, left to
+    // right, no precedence — leaves a single 0/1 on the stack.
+    function emitCondition(instrs, terms) {
+      terms.forEach((term, i) => {
+        pushOperand(instrs, term.left);
+        pushOperand(instrs, term.right);
+        instrs.push({ op: REL_OP[term.op] });
+        if (term.negate) { ldc(instrs, 0); instrs.push({ op: 'ceq' }); }
+        if (i > 0) instrs.push({ op: JOIN_OP[term.join] });
+      });
+    }
+
     function walk(instrs, node) {
       if (!node) return;
       if (node.type === 'AssignmentStatement') {
@@ -590,6 +605,33 @@
         pushOperand(instrs, node.source);
         instrs.push({ op: 'add' });
         stloc(instrs, node.target);
+        return;
+      }
+      if (node.type === 'WhileLoopStatement') {
+        const start = newLabel();
+        const end = newLabel();
+        instrs.push({ label: start });
+        emitCondition(instrs, node.condition.terms);
+        if (node.condition.invert) { ldc(instrs, 0); instrs.push({ op: 'ceq' }); }
+        instrs.push({ op: 'brtrue.s', arg: end });
+        node.body.forEach(c => walk(instrs, c));
+        instrs.push({ op: 'br.s', arg: start });
+        instrs.push({ label: end });
+        return;
+      }
+      if (node.type === 'IfStatement') {
+        const hasElse = node.elseBody.length > 0;
+        const elseLabel = hasElse ? newLabel() : null;
+        const endLabel = newLabel();
+        emitCondition(instrs, node.condition.terms);
+        instrs.push({ op: 'brfalse.s', arg: hasElse ? elseLabel : endLabel });
+        node.thenBody.forEach(c => walk(instrs, c));
+        if (hasElse) {
+          instrs.push({ op: 'br.s', arg: endLabel });
+          instrs.push({ label: elseLabel });
+          node.elseBody.forEach(c => walk(instrs, c));
+        }
+        instrs.push({ label: endLabel });
         return;
       }
     }
