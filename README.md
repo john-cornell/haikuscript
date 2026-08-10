@@ -103,7 +103,7 @@ Or double-click **`repl.bat`** — starts server and opens the REPL tab for you.
 Then open **`http://localhost:3000/repl.html`**.
 
 - **Edit on screen** — type HaikuScript into the editor and press **Run** (or **Ctrl + Enter**).
-- The page runs the whole pipeline client-side: lex → syllable audit → AST → WAT → WASM → execute, showing the **Tokens**, **AST**, **WAT**, and final **Result** panels.
+- The page runs the whole pipeline client-side: lex → syllable audit → AST → WAT → WASM → execute, showing the **Tokens**, **AST**, **WAT**, **CIL / IL**, and final **Result** panels. The CIL/IL panel is generated from the exact same AST as the WAT panel, side by side, so the two backends can be compared instruction-by-instruction — it's illustrative-only text (an ildasm-style disassembly listing), not something assembled into a real .NET module or executed.
 - **Errors** surface with the offending line number and highlight that line in the editor.
 - **Open… / Save / Save As…** use the browser File System Access API (Chrome/Edge). On other browsers these fall back to a file picker + download automatically.
 

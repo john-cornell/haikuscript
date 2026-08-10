@@ -104,7 +104,7 @@ module.exports = grammar({
 > Note: these Tree-sitter files predate the `PRINT` vocabulary and the short (1-2 char) named-identifier support added to the hand lexer in §4 — they still highlight the original fixed vocabulary correctly, but don't yet tag `print`/`say`/`announce`/etc. as keywords or arbitrary `a`, `r3`, `ww`-style names as variables. Editor highlighting only; doesn't affect compilation.
 
 ## 4. Shared Compiler Core (`haiku-core.js`)
-Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of truth for the vocabulary, syllable audit, AST parser, and code generator — consumed by both the Node CLI and the browser REPL.
+Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of truth for the vocabulary, syllable audit, AST parser, and code generators — consumed by both the Node CLI and the browser REPL. The core now ships two backends walking the exact same AST: `generateWat` (WebAssembly Text, assembled to real WASM and executed) and `generateIl` (an ildasm-style CIL disassembly listing, illustrative text only — nothing is assembled into a real .NET module or executed). Both take the same `seed` argument so their emitted PRNG literals are directly comparable — the "one AST, multiple backends" point of the talk.
 ```javascript
 // HaikuScript shared compiler core — environment-agnostic (no fs, no process, no DOM).
 // Consumed by the Node CLI (haiku.js) and the browser REPL (repl.js) so the
@@ -647,7 +647,229 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     return `(module\n  (import "env" "print" (func $print (param i32)))\n  (import "env" "input" (func $input (result i32)))\n${prng}  (func $compute (result i32)\n    ${localsDecl}\n\n${watBody}\n    local.get $x\n  )\n  (export "compute" (func $compute))\n)`;
   }
 
-  return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat };
+  // PHASE 3b: Code Generation — turn the AST into an ildasm-style CIL
+  // disassembly listing (text only: nothing is assembled into a real .dll,
+  // and nothing here executes). Walks the exact same AST as generateWat via
+  // a parallel walk()/emitCondition() pair, so the two backends are easy to
+  // compare instruction-by-instruction. See
+  // docs/superpowers/specs/2026-08-10-il-backend-design.md.
+  function generateIl(ast, seed) {
+    const RNG_SEED = ((seed >>> 0) || 0x9E3779B9);
+    const RNG_SEED_SIGNED = RNG_SEED > 0x7FFFFFFF ? RNG_SEED - 0x100000000 : RNG_SEED;
+
+    const localNames = new Set(['x']); // Compute() always returns x
+    ast.body.forEach(n => collectIdentifiers(n, localNames));
+    const localList = Array.from(localNames);
+    const localIndex = new Map(localList.map((name, i) => [name, i]));
+
+    let nextLabel = 0;
+    function newLabel() { return `L${nextLabel++}`; }
+
+    function ldc(instrs, value) {
+      if (value === -1) instrs.push({ op: 'ldc.i4.m1' });
+      else if (value >= 0 && value <= 8) instrs.push({ op: `ldc.i4.${value}` });
+      else if (value >= -128 && value <= 127) instrs.push({ op: 'ldc.i4.s', arg: value });
+      else instrs.push({ op: 'ldc.i4', arg: value });
+    }
+    function ldlocSlot(instrs, slot, comment) {
+      if (slot <= 3) instrs.push({ op: `ldloc.${slot}`, comment });
+      else instrs.push({ op: 'ldloc.s', arg: slot, comment });
+    }
+    function stlocSlot(instrs, slot, comment) {
+      if (slot <= 3) instrs.push({ op: `stloc.${slot}`, comment });
+      else instrs.push({ op: 'stloc.s', arg: slot, comment });
+    }
+    function ldloc(instrs, name) { ldlocSlot(instrs, localIndex.get(name), name); }
+    function stloc(instrs, name) { stlocSlot(instrs, localIndex.get(name), name); }
+    function pushOperand(instrs, operand) {
+      if (typeof operand === 'number') ldc(instrs, operand);
+      else ldloc(instrs, operand);
+    }
+
+    const REL_OP = { eq: 'ceq', lt: 'clt', gt: 'cgt' };
+    const JOIN_OP = { and: 'and', or: 'or', xor: 'xor' };
+
+    // Mirrors generateWat's emitCondition: flat and/or/xor chain, left to
+    // right, no precedence — leaves a single 0/1 on the stack.
+    function emitCondition(instrs, terms) {
+      terms.forEach((term, i) => {
+        pushOperand(instrs, term.left);
+        pushOperand(instrs, term.right);
+        instrs.push({ op: REL_OP[term.op] });
+        if (term.negate) { ldc(instrs, 0); instrs.push({ op: 'ceq' }); }
+        if (i > 0) instrs.push({ op: JOIN_OP[term.join] });
+      });
+    }
+
+    function walk(instrs, node) {
+      if (!node) return;
+      if (node.type === 'AssignmentStatement') {
+        pushOperand(instrs, node.value);
+        stloc(instrs, node.target);
+        return;
+      }
+      if (node.type === 'AdditionStatement') {
+        ldloc(instrs, node.target);
+        pushOperand(instrs, node.source);
+        instrs.push({ op: 'add' });
+        stloc(instrs, node.target);
+        return;
+      }
+      if (node.type === 'RandomStatement') {
+        instrs.push({ op: 'call', arg: 'int32 HaikuProgram::NextRandom()' });
+        stloc(instrs, node.target);
+        return;
+      }
+      if (node.type === 'PrintStatement') {
+        pushOperand(instrs, node.value);
+        instrs.push({ op: 'call', arg: 'void HaikuHost::Print(int32)' });
+        return;
+      }
+      if (node.type === 'InputStatement') {
+        instrs.push({ op: 'call', arg: 'int32 HaikuHost::Input()' });
+        stloc(instrs, node.target);
+        return;
+      }
+      if (node.type === 'WhileLoopStatement') {
+        const start = newLabel();
+        const end = newLabel();
+        instrs.push({ label: start });
+        emitCondition(instrs, node.condition.terms);
+        if (node.condition.invert) { ldc(instrs, 0); instrs.push({ op: 'ceq' }); }
+        instrs.push({ op: 'brtrue.s', arg: end });
+        node.body.forEach(c => walk(instrs, c));
+        instrs.push({ op: 'br.s', arg: start });
+        instrs.push({ label: end });
+        return;
+      }
+      if (node.type === 'IfStatement') {
+        const hasElse = node.elseBody.length > 0;
+        const elseLabel = hasElse ? newLabel() : null;
+        const endLabel = newLabel();
+        emitCondition(instrs, node.condition.terms);
+        instrs.push({ op: 'brfalse.s', arg: hasElse ? elseLabel : endLabel });
+        node.thenBody.forEach(c => walk(instrs, c));
+        if (hasElse) {
+          instrs.push({ op: 'br.s', arg: endLabel });
+          instrs.push({ label: elseLabel });
+          node.elseBody.forEach(c => walk(instrs, c));
+        }
+        instrs.push({ label: endLabel });
+        return;
+      }
+    }
+
+    const bodyInstrs = [];
+    ast.body.forEach(n => walk(bodyInstrs, n));
+    ldloc(bodyInstrs, 'x');
+    bodyInstrs.push({ op: 'ret' });
+
+    // ---- Byte-size + address resolution ----------------------------------
+    const OPCODE_SIZE = {
+      'ldc.i4.m1': 1, 'ldc.i4.0': 1, 'ldc.i4.1': 1, 'ldc.i4.2': 1, 'ldc.i4.3': 1,
+      'ldc.i4.4': 1, 'ldc.i4.5': 1, 'ldc.i4.6': 1, 'ldc.i4.7': 1, 'ldc.i4.8': 1,
+      'ldc.i4.s': 2, 'ldc.i4': 5,
+      'ldloc.0': 1, 'ldloc.1': 1, 'ldloc.2': 1, 'ldloc.3': 1, 'ldloc.s': 2,
+      'stloc.0': 1, 'stloc.1': 1, 'stloc.2': 1, 'stloc.3': 1, 'stloc.s': 2,
+      add: 1, ceq: 2, clt: 2, cgt: 2, and: 1, or: 1, xor: 1, ret: 1,
+      shl: 1, 'shr.un': 1, 'rem.un': 1,
+      'brfalse.s': 2, 'brtrue.s': 2, 'br.s': 2,
+      call: 5, ldsfld: 5, stsfld: 5
+    };
+
+    function resolveAddresses(instrs) {
+      const labelAddr = new Map();
+      let addr = 0;
+      instrs.forEach(instr => {
+        if (instr.label !== undefined) { labelAddr.set(instr.label, addr); return; }
+        const size = OPCODE_SIZE[instr.op];
+        if (size === undefined) throw new Error(`generateIl: no OPCODE_SIZE entry for '${instr.op}'`);
+        instr.addr = addr;
+        addr += size;
+      });
+      return labelAddr;
+    }
+
+    function hex4(n) { return 'IL_' + n.toString(16).padStart(4, '0'); }
+
+    const BRANCH_OPS = new Set(['br.s', 'brfalse.s', 'brtrue.s']);
+    function renderInstrs(instrs, labelAddr, indent) {
+      let out = '';
+      instrs.forEach(instr => {
+        if (instr.label !== undefined) return;
+        let line = `${indent}${hex4(instr.addr)}: ${instr.op.padEnd(10)}`;
+        if (BRANCH_OPS.has(instr.op)) line += ` ${hex4(labelAddr.get(instr.arg))}`;
+        else if (instr.arg !== undefined) line += ` ${instr.arg}`;
+        if (instr.comment) line += ` // ${instr.comment}`;
+        out += line + '\n';
+      });
+      return out;
+    }
+
+    const bodyLabelAddr = resolveAddresses(bodyInstrs);
+    const bodyText = renderInstrs(bodyInstrs, bodyLabelAddr, '    ');
+    const localsDecl = localList.map((name, i) => `        [${i}] int32 ${name}`).join(',\n');
+
+    // ---- NextRandom() — same xorshift32 algorithm as generateWat's
+    // $next_random, translated instruction-for-instruction into CIL. --------
+    const rngInstrs = [];
+    rngInstrs.push({ op: 'ldsfld', arg: 'int32 HaikuProgram::rng' });
+    stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 13);
+    rngInstrs.push({ op: 'shl' }); rngInstrs.push({ op: 'xor' }); stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 17);
+    rngInstrs.push({ op: 'shr.un' }); rngInstrs.push({ op: 'xor' }); stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 5);
+    rngInstrs.push({ op: 'shl' }); rngInstrs.push({ op: 'xor' }); stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); rngInstrs.push({ op: 'stsfld', arg: 'int32 HaikuProgram::rng' });
+    ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 100); rngInstrs.push({ op: 'rem.un' });
+    rngInstrs.push({ op: 'ret' });
+
+    const cctorInstrs = [];
+    ldc(cctorInstrs, RNG_SEED_SIGNED);
+    // Same 32 bits as the WAT $rng global, just decoded as CIL's signed int32
+    // instead of WASM's i32.const — attach the hex form so the two backends'
+    // seed literals are directly comparable side by side despite the
+    // different-looking decimal representations.
+    cctorInstrs[cctorInstrs.length - 1].comment =
+      '0x' + RNG_SEED.toString(16).toUpperCase() + ' — same 32 bits as the WAT $rng global';
+    cctorInstrs.push({ op: 'stsfld', arg: 'int32 HaikuProgram::rng' });
+    cctorInstrs.push({ op: 'ret' });
+
+    const rngLabelAddr = resolveAddresses(rngInstrs);
+    const rngText = renderInstrs(rngInstrs, rngLabelAddr, '    ');
+    const cctorLabelAddr = resolveAddresses(cctorInstrs);
+    const cctorText = renderInstrs(cctorInstrs, cctorLabelAddr, '    ');
+
+    return (
+      '// ildasm-style disassembly emitted directly by HaikuScript — illustrative text\n' +
+      '// only: not assembled into a real module, and not executed.\n' +
+      '.class private auto ansi HaikuProgram\n' +
+      '       extends [mscorlib]System.Object\n' +
+      '{\n' +
+      '  .field private static int32 rng\n\n' +
+      '  .method private hidebysig static int32 NextRandom() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n' +
+      '    .locals init ([0] int32 s)\n\n' +
+      rngText +
+      '  } // end of method HaikuProgram::NextRandom\n\n' +
+      '  .method public hidebysig static int32 Compute() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n' +
+      '    .locals init (\n' + localsDecl + '\n    )\n\n' +
+      bodyText +
+      '  } // end of method HaikuProgram::Compute\n\n' +
+      '  .method private hidebysig static void .cctor() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n\n' +
+      cctorText +
+      '  } // end of method HaikuProgram::.cctor\n' +
+      '} // end of class HaikuProgram\n'
+    );
+  }
+
+  return { VOCAB, EXPECTED_METER, HaikuError, tokenize, parseProgram, generateWat, generateIl };
 });
 ```
 
@@ -844,6 +1066,7 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
     $('tokens').textContent = '';
     $('ast').textContent = '';
     $('wat').textContent = '';
+    $('il').textContent = '';
     $('printed').textContent = '';
 
     try {
@@ -858,9 +1081,12 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
       const ast = HaikuCore.parseProgram(tokens);
       $('ast').textContent = JSON.stringify(ast, null, 2);
 
-      setStatus('Phase 3 — generating WAT & assembling WASM…', 'busy');
-      const wat = HaikuCore.generateWat(ast, Date.now());
+      setStatus('Phase 3 — generating WAT & CIL, assembling WASM…', 'busy');
+      const seed = Date.now();
+      const wat = HaikuCore.generateWat(ast, seed);
       $('wat').textContent = wat;
+      const il = HaikuCore.generateIl(ast, seed);
+      $('il').textContent = il;
 
       const module = wabt.parseWat('repl.wat', wat);
       const { buffer } = module.toBinary({});
@@ -1073,6 +1299,10 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
       <details>
         <summary>WebAssembly Text (.wat)</summary>
         <pre id="wat"></pre>
+      </details>
+      <details>
+        <summary>CIL / IL (ildasm-style)</summary>
+        <pre id="il"></pre>
       </details>
     </div>
   </div>

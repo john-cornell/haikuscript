@@ -674,8 +674,10 @@
       let addr = 0;
       instrs.forEach(instr => {
         if (instr.label !== undefined) { labelAddr.set(instr.label, addr); return; }
+        const size = OPCODE_SIZE[instr.op];
+        if (size === undefined) throw new Error(`generateIl: no OPCODE_SIZE entry for '${instr.op}'`);
         instr.addr = addr;
-        addr += OPCODE_SIZE[instr.op];
+        addr += size;
       });
       return labelAddr;
     }
@@ -687,7 +689,7 @@
       let out = '';
       instrs.forEach(instr => {
         if (instr.label !== undefined) return;
-        let line = `${indent}${hex4(instr.addr)}: ${instr.op}`;
+        let line = `${indent}${hex4(instr.addr)}: ${instr.op.padEnd(10)}`;
         if (BRANCH_OPS.has(instr.op)) line += ` ${hex4(labelAddr.get(instr.arg))}`;
         else if (instr.arg !== undefined) line += ` ${instr.arg}`;
         if (instr.comment) line += ` // ${instr.comment}`;
@@ -717,6 +719,12 @@
 
     const cctorInstrs = [];
     ldc(cctorInstrs, RNG_SEED_SIGNED);
+    // Same 32 bits as the WAT $rng global, just decoded as CIL's signed int32
+    // instead of WASM's i32.const — attach the hex form so the two backends'
+    // seed literals are directly comparable side by side despite the
+    // different-looking decimal representations.
+    cctorInstrs[cctorInstrs.length - 1].comment =
+      '0x' + RNG_SEED.toString(16).toUpperCase() + ' — same 32 bits as the WAT $rng global';
     cctorInstrs.push({ op: 'stsfld', arg: 'int32 HaikuProgram::rng' });
     cctorInstrs.push({ op: 'ret' });
 
