@@ -607,6 +607,21 @@
         stloc(instrs, node.target);
         return;
       }
+      if (node.type === 'RandomStatement') {
+        instrs.push({ op: 'call', arg: 'int32 HaikuProgram::NextRandom()' });
+        stloc(instrs, node.target);
+        return;
+      }
+      if (node.type === 'PrintStatement') {
+        pushOperand(instrs, node.value);
+        instrs.push({ op: 'call', arg: 'void HaikuHost::Print(int32)' });
+        return;
+      }
+      if (node.type === 'InputStatement') {
+        instrs.push({ op: 'call', arg: 'int32 HaikuHost::Input()' });
+        stloc(instrs, node.target);
+        return;
+      }
       if (node.type === 'WhileLoopStatement') {
         const start = newLabel();
         const end = newLabel();
@@ -685,18 +700,55 @@
     const bodyText = renderInstrs(bodyInstrs, bodyLabelAddr, '    ');
     const localsDecl = localList.map((name, i) => `        [${i}] int32 ${name}`).join(',\n');
 
+    // ---- NextRandom() — same xorshift32 algorithm as generateWat's
+    // $next_random, translated instruction-for-instruction into CIL. --------
+    const rngInstrs = [];
+    rngInstrs.push({ op: 'ldsfld', arg: 'int32 HaikuProgram::rng' });
+    stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 13);
+    rngInstrs.push({ op: 'shl' }); rngInstrs.push({ op: 'xor' }); stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 17);
+    rngInstrs.push({ op: 'shr.un' }); rngInstrs.push({ op: 'xor' }); stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 5);
+    rngInstrs.push({ op: 'shl' }); rngInstrs.push({ op: 'xor' }); stlocSlot(rngInstrs, 0, 's');
+    ldlocSlot(rngInstrs, 0, 's'); rngInstrs.push({ op: 'stsfld', arg: 'int32 HaikuProgram::rng' });
+    ldlocSlot(rngInstrs, 0, 's'); ldc(rngInstrs, 100); rngInstrs.push({ op: 'rem.un' });
+    rngInstrs.push({ op: 'ret' });
+
+    const cctorInstrs = [];
+    ldc(cctorInstrs, RNG_SEED_SIGNED);
+    cctorInstrs.push({ op: 'stsfld', arg: 'int32 HaikuProgram::rng' });
+    cctorInstrs.push({ op: 'ret' });
+
+    const rngLabelAddr = resolveAddresses(rngInstrs);
+    const rngText = renderInstrs(rngInstrs, rngLabelAddr, '    ');
+    const cctorLabelAddr = resolveAddresses(cctorInstrs);
+    const cctorText = renderInstrs(cctorInstrs, cctorLabelAddr, '    ');
+
     return (
       '// ildasm-style disassembly emitted directly by HaikuScript — illustrative text\n' +
       '// only: not assembled into a real module, and not executed.\n' +
       '.class private auto ansi HaikuProgram\n' +
       '       extends [mscorlib]System.Object\n' +
       '{\n' +
+      '  .field private static int32 rng\n\n' +
+      '  .method private hidebysig static int32 NextRandom() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n' +
+      '    .locals init ([0] int32 s)\n\n' +
+      rngText +
+      '  } // end of method HaikuProgram::NextRandom\n\n' +
       '  .method public hidebysig static int32 Compute() cil managed\n' +
       '  {\n' +
       '    .maxstack 8\n' +
       '    .locals init (\n' + localsDecl + '\n    )\n\n' +
       bodyText +
       '  } // end of method HaikuProgram::Compute\n\n' +
+      '  .method private hidebysig static void .cctor() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n\n' +
+      cctorText +
+      '  } // end of method HaikuProgram::.cctor\n' +
       '} // end of class HaikuProgram\n'
     );
   }
