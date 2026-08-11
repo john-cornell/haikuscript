@@ -540,11 +540,11 @@
   }
 
   // PHASE 3b: Code Generation — turn the AST into an ildasm-style CIL
-  // disassembly listing (text only: nothing is assembled into a real .dll,
-  // and nothing here executes). Walks the exact same AST as generateWat via
+  // listing that ilasm can actually assemble into a working .exe (see the
+  // REPL's Build .exe button). Walks the exact same AST as generateWat via
   // a parallel walk()/emitCondition() pair, so the two backends are easy to
   // compare instruction-by-instruction. See
-  // docs/superpowers/specs/2026-08-10-il-backend-design.md.
+  // docs/superpowers/specs/2026-08-11-repl-syntax-compile-exe-design.md.
   function generateIl(ast, seed) {
     const RNG_SEED = ((seed >>> 0) || 0x9E3779B9);
     const RNG_SEED_SIGNED = RNG_SEED > 0x7FFFFFFF ? RNG_SEED - 0x100000000 : RNG_SEED;
@@ -663,6 +663,7 @@
       'ldc.i4.s': 2, 'ldc.i4': 5,
       'ldloc.0': 1, 'ldloc.1': 1, 'ldloc.2': 1, 'ldloc.3': 1, 'ldloc.s': 2,
       'stloc.0': 1, 'stloc.1': 1, 'stloc.2': 1, 'stloc.3': 1, 'stloc.s': 2,
+      'ldarg.0': 1,
       add: 1, ceq: 2, clt: 2, cgt: 2, and: 1, or: 1, xor: 1, ret: 1,
       shl: 1, 'shr.un': 1, 'rem.un': 1,
       'brfalse.s': 2, 'brtrue.s': 2, 'br.s': 2,
@@ -733,9 +734,58 @@
     const cctorLabelAddr = resolveAddresses(cctorInstrs);
     const cctorText = renderInstrs(cctorInstrs, cctorLabelAddr, '    ');
 
+    // ---- HaikuHost.Print/Input — real Console-backed implementations, plus
+    // HaikuProgram.Main as the assembly's entry point. Unlike Compute()'s
+    // body, these are small and fixed regardless of the AST, so they're
+    // written directly as instruction lists instead of via walk(). ----------
+    const printInstrs = [
+      { op: 'ldarg.0' },
+      { op: 'call', arg: 'void [mscorlib]System.Console::WriteLine(int32)' },
+      { op: 'ret' }
+    ];
+    const inputInstrs = [
+      { op: 'call', arg: 'string [mscorlib]System.Console::ReadLine()' },
+      { op: 'stloc.0' },
+      { op: 'ldloc.0' },
+      { op: 'call', arg: 'int32 [mscorlib]System.Int32::Parse(string)' },
+      { op: 'ret' }
+    ];
+    const mainInstrs = [
+      { op: 'call', arg: 'int32 HaikuProgram::Compute()' },
+      { op: 'call', arg: 'void [mscorlib]System.Console::WriteLine(int32)' },
+      { op: 'ret' }
+    ];
+    const printLabelAddr = resolveAddresses(printInstrs);
+    const printText = renderInstrs(printInstrs, printLabelAddr, '    ');
+    const inputLabelAddr = resolveAddresses(inputInstrs);
+    const inputText = renderInstrs(inputInstrs, inputLabelAddr, '    ');
+    const mainLabelAddr = resolveAddresses(mainInstrs);
+    const mainText = renderInstrs(mainInstrs, mainLabelAddr, '    ');
+
     return (
-      '// ildasm-style disassembly emitted directly by HaikuScript — illustrative text\n' +
-      '// only: not assembled into a real module, and not executed.\n' +
+      '// ildasm-style disassembly emitted directly by HaikuScript — buildable\n' +
+      '// with `ilasm <file> /exe` (Windows .NET Framework or Mono\'s ilasm).\n' +
+      '.assembly extern mscorlib {}\n' +
+      '.assembly HaikuProgram\n' +
+      '{\n' +
+      '  .ver 1:0:0:0\n' +
+      '}\n' +
+      '.module HaikuProgram.exe\n\n' +
+      '.class private auto ansi HaikuHost\n' +
+      '       extends [mscorlib]System.Object\n' +
+      '{\n' +
+      '  .method public hidebysig static void Print(int32 v) cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n\n' +
+      printText +
+      '  } // end of method HaikuHost::Print\n\n' +
+      '  .method public hidebysig static int32 Input() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n' +
+      '    .locals init ([0] string s)\n\n' +
+      inputText +
+      '  } // end of method HaikuHost::Input\n' +
+      '} // end of class HaikuHost\n\n' +
       '.class private auto ansi HaikuProgram\n' +
       '       extends [mscorlib]System.Object\n' +
       '{\n' +
@@ -756,7 +806,13 @@
       '  {\n' +
       '    .maxstack 8\n\n' +
       cctorText +
-      '  } // end of method HaikuProgram::.cctor\n' +
+      '  } // end of method HaikuProgram::.cctor\n\n' +
+      '  .method public hidebysig static void Main() cil managed\n' +
+      '  {\n' +
+      '    .entrypoint\n' +
+      '    .maxstack 8\n\n' +
+      mainText +
+      '  } // end of method HaikuProgram::Main\n' +
       '} // end of class HaikuProgram\n'
     );
   }
