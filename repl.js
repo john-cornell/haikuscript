@@ -39,7 +39,7 @@
   // Lazily boot the WABT assembler exactly once.
   async function ensureToolchain() {
     if (wabt) return;
-    setStatus('Booting WABT…', 'busy');
+    setStatus('Booting WABT… 🐰', 'busy');
     wabt = await WabtModule();
   }
 
@@ -205,6 +205,14 @@
     }
   }
 
+  // ---- Tabs ---------------------------------------------------------------
+  function switchTab(name) {
+    $('tabBtnRepl').classList.toggle('active', name === 'repl');
+    $('tabBtnGrammar').classList.toggle('active', name === 'grammar');
+    $('tabRepl').classList.toggle('active', name === 'repl');
+    $('tabGrammar').classList.toggle('active', name === 'grammar');
+  }
+
   // ---- Wiring ------------------------------------------------------------
   function init() {
     editor.value = DEFAULT_SOURCE;
@@ -217,6 +225,9 @@
     fetch('/GRAMMAR.md').then(r => r.ok ? r.text() : null).then(t => {
       if (t) $('grammar').textContent = t;
     }).catch(() => {});
+
+    $('tabBtnRepl').addEventListener('click', () => switchTab('repl'));
+    $('tabBtnGrammar').addEventListener('click', () => switchTab('grammar'));
 
     $('runBtn').addEventListener('click', run);
     $('compileBtn').addEventListener('click', compileOnly);

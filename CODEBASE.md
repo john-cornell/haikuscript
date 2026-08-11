@@ -1045,7 +1045,7 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
   // Lazily boot the WABT assembler exactly once.
   async function ensureToolchain() {
     if (wabt) return;
-    setStatus('Booting WABT…', 'busy');
+    setStatus('Booting WABT… 🐰', 'busy');
     wabt = await WabtModule();
   }
 

@@ -53,6 +53,16 @@
       margin: 0; padding: .75rem; overflow-x: auto; font-size: .82rem;
       border-top: 1px solid #8884; background: #00000008;
     }
+    .tabs { display: flex; gap: .25rem; border-bottom: 1px solid #8886; margin-bottom: 1rem; }
+    .tab-btn {
+      font: inherit; font-weight: 600; padding: .55rem 1.1rem; border: none; border-radius: 0;
+      border-bottom: 2px solid transparent; background: none; cursor: pointer; opacity: .6;
+    }
+    .tab-btn:hover { opacity: .85; background: #8881; }
+    .tab-btn.active { opacity: 1; border-bottom-color: #0b7; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    #grammar { white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -72,38 +82,45 @@
     <input id="filePicker" type="file" accept=".hk,text/plain" hidden>
   </div>
 
-  <div class="grid">
-    <div>
-      <textarea id="editor" spellcheck="false"></textarea>
-      <div id="status" class="status"></div>
+  <div class="tabs">
+    <button class="tab-btn active" id="tabBtnRepl" data-tab="repl">REPL</button>
+    <button class="tab-btn" id="tabBtnGrammar" data-tab="grammar">Syntax Reference</button>
+  </div>
+
+  <div id="tabRepl" class="tab-panel active">
+    <div class="grid">
+      <div>
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div id="status" class="status"></div>
+      </div>
+      <div>
+        <div id="result" class="result">—</div>
+        <details open>
+          <summary>Printed Output</summary>
+          <pre id="printed"></pre>
+        </details>
+        <details open>
+          <summary>Tokens</summary>
+          <pre id="tokens"></pre>
+        </details>
+        <details>
+          <summary>AST</summary>
+          <pre id="ast"></pre>
+        </details>
+        <details>
+          <summary>WebAssembly Text (.wat)</summary>
+          <pre id="wat"></pre>
+        </details>
+        <details>
+          <summary>CIL / IL (ildasm-style)</summary>
+          <pre id="il"></pre>
+        </details>
+      </div>
     </div>
-    <div>
-      <div id="result" class="result">—</div>
-      <details open>
-        <summary>Printed Output</summary>
-        <pre id="printed"></pre>
-      </details>
-      <details open>
-        <summary>Tokens</summary>
-        <pre id="tokens"></pre>
-      </details>
-      <details>
-        <summary>AST</summary>
-        <pre id="ast"></pre>
-      </details>
-      <details>
-        <summary>WebAssembly Text (.wat)</summary>
-        <pre id="wat"></pre>
-      </details>
-      <details>
-        <summary>CIL / IL (ildasm-style)</summary>
-        <pre id="il"></pre>
-      </details>
-      <details>
-        <summary>Syntax Reference (GRAMMAR.md)</summary>
-        <pre id="grammar"></pre>
-      </details>
-    </div>
+  </div>
+
+  <div id="tabGrammar" class="tab-panel">
+    <pre id="grammar"></pre>
   </div>
 
   <!-- Shared compiler core, then the WABT assembler, then the REPL driver -->
