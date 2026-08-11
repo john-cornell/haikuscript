@@ -182,6 +182,11 @@
       if (t) { editor.value = t; fileName.textContent = 'fibonacci.hk'; }
     }).catch(() => {});
 
+    // Static reference panel — fetched once at load, not tied to Run/Compile.
+    fetch('/GRAMMAR.md').then(r => r.ok ? r.text() : null).then(t => {
+      if (t) $('grammar').textContent = t;
+    }).catch(() => {});
+
     $('runBtn').addEventListener('click', run);
     $('openBtn').addEventListener('click', openFile);
     $('saveBtn').addEventListener('click', () => saveFile(false));
