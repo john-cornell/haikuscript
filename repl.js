@@ -53,8 +53,7 @@
     editor.setSelectionRange(start, end);
   }
 
-  // Full pipeline: parse -> audit/tokenize -> AST -> WAT -> WASM -> execute.
-  async function run() {
+  function resetPanels() {
     $('result').className = 'result';
     $('result').textContent = 'Running…';
     $('tokens').textContent = '';
@@ -62,35 +61,57 @@
     $('wat').textContent = '';
     $('il').textContent = '';
     $('printed').textContent = '';
+  }
 
+  function reportError(err) {
+    const line = err && err.line;
+    $('result').textContent = (line ? 'Error [Line ' + line + ']: ' : 'Error: ') + err.message;
+    $('result').className = 'result err';
+    setStatus('Failed ✗', 'err');
+    highlightLine(line);
+  }
+
+  // Shared prefix of Run and Compile: lex -> parse -> generate WAT & CIL -> assemble WASM.
+  // Populates Tokens/AST/WAT/IL panels. Never executes anything.
+  async function compilePipeline() {
+    await ensureToolchain();
+    const source = editor.value;
+
+    setStatus('Phase 1 — lexing & syllable audit…', 'busy');
+    const tokens = HaikuCore.tokenize(source);
+    $('tokens').textContent = JSON.stringify(tokens, null, 2);
+
+    setStatus('Phase 2 — building AST…', 'busy');
+    const ast = HaikuCore.parseProgram(tokens);
+    $('ast').textContent = JSON.stringify(ast, null, 2);
+
+    setStatus('Phase 3 — generating WAT & CIL, assembling WASM…', 'busy');
+    const seed = Date.now();
+    const wat = HaikuCore.generateWat(ast, seed);
+    $('wat').textContent = wat;
+    const il = HaikuCore.generateIl(ast, seed);
+    $('il').textContent = il;
+
+    const module = wabt.parseWat('repl.wat', wat);
+    const { buffer } = module.toBinary({});
+
+    return { ast, wat, il, wasmBuffer: buffer };
+  }
+
+  // Full pipeline: compile, then execute the assembled WASM.
+  async function run() {
+    resetPanels();
     try {
-      await ensureToolchain();
-      const source = editor.value;
+      const { wasmBuffer } = await compilePipeline();
 
-      setStatus('Phase 1 — lexing & syllable audit…', 'busy');
-      const tokens = HaikuCore.tokenize(source);
-      $('tokens').textContent = JSON.stringify(tokens, null, 2);
-
-      setStatus('Phase 2 — building AST…', 'busy');
-      const ast = HaikuCore.parseProgram(tokens);
-      $('ast').textContent = JSON.stringify(ast, null, 2);
-
-      setStatus('Phase 3 — generating WAT & CIL, assembling WASM…', 'busy');
-      const seed = Date.now();
-      const wat = HaikuCore.generateWat(ast, seed);
-      $('wat').textContent = wat;
-      const il = HaikuCore.generateIl(ast, seed);
-      $('il').textContent = il;
-
-      const module = wabt.parseWat('repl.wat', wat);
-      const { buffer } = module.toBinary({});
+      setStatus('Phase 4 — executing…', 'busy');
       const printed = [];
       const readInput = () => {
         const value = parseInt(window.prompt('Input:') || '', 10);
         return Number.isNaN(value) ? 0 : value;
       };
       const importObject = { env: { print: (v) => printed.push(v), input: readInput } };
-      const { instance } = await WebAssembly.instantiate(buffer, importObject);
+      const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
 
       const value = instance.exports.compute();
       $('printed').textContent = printed.length ? printed.join('\n') : '(none)';
@@ -98,11 +119,21 @@
       $('result').className = 'result ok';
       setStatus('Done ✓', 'ok');
     } catch (err) {
-      const line = err && err.line;
-      $('result').textContent = (line ? 'Error [Line ' + line + ']: ' : 'Error: ') + err.message;
-      $('result').className = 'result err';
-      setStatus('Failed ✗', 'err');
-      highlightLine(line);
+      reportError(err);
+    }
+  }
+
+  // Same pipeline as Run, but stops after assembling — never executes, so no
+  // input() prompts fire and Printed Output is left untouched.
+  async function compileOnly() {
+    resetPanels();
+    try {
+      await compilePipeline();
+      $('result').textContent = 'Compiled ✓ (not run)';
+      $('result').className = 'result ok';
+      setStatus('Compiled ✓', 'ok');
+    } catch (err) {
+      reportError(err);
     }
   }
 
@@ -188,13 +219,15 @@
     }).catch(() => {});
 
     $('runBtn').addEventListener('click', run);
+    $('compileBtn').addEventListener('click', compileOnly);
     $('openBtn').addEventListener('click', openFile);
     $('saveBtn').addEventListener('click', () => saveFile(false));
     $('saveAsBtn').addEventListener('click', () => saveFile(true));
     $('filePicker').addEventListener('change', openViaInput);
 
     editor.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'Enter') { e.preventDefault(); run(); }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') { e.preventDefault(); compileOnly(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(false); }
     });
 
