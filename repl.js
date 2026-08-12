@@ -61,6 +61,7 @@
     $('wat').textContent = '';
     $('il').textContent = '';
     $('printed').textContent = '';
+    $('buildExeBtn').disabled = true;
   }
 
   function reportError(err) {
@@ -91,6 +92,7 @@
     $('wat').textContent = wat;
     const il = HaikuCore.generateIl(ast, seed);
     $('il').textContent = il;
+    $('buildExeBtn').disabled = false;
 
     const module = wabt.parseWat('repl.wat', wat);
     const { buffer } = module.toBinary({});
@@ -134,6 +136,34 @@
       setStatus('Compiled ✓', 'ok');
     } catch (err) {
       reportError(err);
+    }
+  }
+
+  // POSTs the currently-displayed IL to the server's /build-exe route
+  // (server.js, which shells out to ilasm.exe) and downloads the result.
+  async function buildExe() {
+    const il = $('il').textContent;
+    if (!il) return;
+    setStatus('Building .exe…', 'busy');
+    try {
+      const resp = await fetch('/build-exe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ il })
+      });
+      if (!resp.ok) {
+        const { error } = await resp.json();
+        throw new Error(error);
+      }
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'HaikuProgram.exe';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus('Built HaikuProgram.exe ✓', 'ok');
+    } catch (err) {
+      setStatus('Build failed: ' + err.message, 'err');
     }
   }
 
@@ -231,6 +261,7 @@
 
     $('runBtn').addEventListener('click', run);
     $('compileBtn').addEventListener('click', compileOnly);
+    $('buildExeBtn').addEventListener('click', buildExe);
     $('openBtn').addEventListener('click', openFile);
     $('saveBtn').addEventListener('click', () => saveFile(false));
     $('saveAsBtn').addEventListener('click', () => saveFile(true));
