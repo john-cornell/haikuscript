@@ -20,6 +20,16 @@ const MIME = {
   '.png': 'image/png', '.ico': 'image/x-icon'
 };
 
+function sendFile(res, filePath, onMissing) {
+  fs.readFile(filePath, (err, data) => {
+    if (err) return onMissing();
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    res.end(data);
+  });
+}
+
+function notFound(res) { res.writeHead(404); res.end('Not found'); }
+
 function serveStatic(req, res) {
   let urlPath;
   try {
@@ -31,10 +41,13 @@ function serveStatic(req, res) {
   if (urlPath === '/') urlPath = '/index.html';
   const filePath = path.normalize(path.join(ROOT, urlPath));
   if (!filePath.startsWith(ROOT + path.sep) && filePath !== ROOT) { res.writeHead(403); return res.end(); }
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
-    res.end(data);
+  sendFile(res, filePath, () => {
+    // The `serve` package this replaced answered extensionless "clean URLs"
+    // (/repl -> repl.html) and 301'd /repl.html to /repl. Browsers cache 301s
+    // indefinitely, so anyone who ran the old setup still gets silently sent
+    // to /repl — resolve those here instead of 404ing on a correct link.
+    if (path.extname(filePath)) return notFound(res);
+    sendFile(res, filePath + '.html', () => notFound(res));
   });
 }
 

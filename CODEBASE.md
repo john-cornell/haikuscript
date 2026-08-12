@@ -1717,7 +1717,7 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
 ```
 
 ## 8. REPL Server (`server.js`)
-Zero-dependency Node script (built-ins only) that replaced the old `serve` package. Two responsibilities: serve the project's static files (`serveStatic`, `/` maps to `/index.html`, malformed URLs get a 400 instead of an uncaught `URIError`, and the path-traversal guard checks `filePath.startsWith(ROOT + path.sep)` — a real directory boundary, not a string-prefix check that a sibling directory like `../haikuscript-secrets` could slip past); and handle `POST /build-exe` (`handleBuildExe`), which writes the posted IL text to a temp `.il` file, shells out to `ilasm.exe` (`execFile`, path from `ILASM_PATH` or the default Windows .NET Framework location) to assemble it into a real `.exe`, streams the `.exe` bytes back as the response, and cleans up the temp `.il`/`.exe`/`.pdb` files it created. Binds to `127.0.0.1` only, since this route runs an external process against arbitrary POSTed text and shouldn't be reachable from the LAN.
+Zero-dependency Node script (built-ins only) that replaced the old `serve` package. Two responsibilities: serve the project's static files (`serveStatic`, `/` maps to `/index.html`, an extensionless path falls back to its `.html` sibling so `serve`'s old "clean URLs" like `/repl` still resolve — browsers cache that package's `/repl.html` → `/repl` 301 indefinitely, so a correct link would otherwise 404 — malformed URLs get a 400 instead of an uncaught `URIError`, and the path-traversal guard checks `filePath.startsWith(ROOT + path.sep)` — a real directory boundary, not a string-prefix check that a sibling directory like `../haikuscript-secrets` could slip past); and handle `POST /build-exe` (`handleBuildExe`), which writes the posted IL text to a temp `.il` file, shells out to `ilasm.exe` (`execFile`, path from `ILASM_PATH` or the default Windows .NET Framework location) to assemble it into a real `.exe`, streams the `.exe` bytes back as the response, and cleans up the temp `.il`/`.exe`/`.pdb` files it created. Binds to `127.0.0.1` only, since this route runs an external process against arbitrary POSTed text and shouldn't be reachable from the LAN.
 ```javascript
 // Static file server for the HaikuScript REPL, plus one POST route that
 // shells out to ilasm.exe to build a real .exe from generated IL text.
@@ -1741,6 +1741,16 @@ const MIME = {
   '.png': 'image/png', '.ico': 'image/x-icon'
 };
 
+function sendFile(res, filePath, onMissing) {
+  fs.readFile(filePath, (err, data) => {
+    if (err) return onMissing();
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    res.end(data);
+  });
+}
+
+function notFound(res) { res.writeHead(404); res.end('Not found'); }
+
 function serveStatic(req, res) {
   let urlPath;
   try {
@@ -1752,10 +1762,13 @@ function serveStatic(req, res) {
   if (urlPath === '/') urlPath = '/index.html';
   const filePath = path.normalize(path.join(ROOT, urlPath));
   if (!filePath.startsWith(ROOT + path.sep) && filePath !== ROOT) { res.writeHead(403); return res.end(); }
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
-    res.end(data);
+  sendFile(res, filePath, () => {
+    // The `serve` package this replaced answered extensionless "clean URLs"
+    // (/repl -> repl.html) and 301'd /repl.html to /repl. Browsers cache 301s
+    // indefinitely, so anyone who ran the old setup still gets silently sent
+    // to /repl — resolve those here instead of 404ing on a correct link.
+    if (path.extname(filePath)) return notFound(res);
+    sendFile(res, filePath + '.html', () => notFound(res));
   });
 }
 
