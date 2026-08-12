@@ -1363,65 +1363,287 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HaikuScript REPL</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%8C%B8</text></svg>">
   <style>
-    :root { color-scheme: light dark; }
+    /* Palette sampled from the banner art: slate ground, teal circuitry,
+       cherry-blossom pink. The page commits to dark so the banner sits in
+       its own world instead of floating on white. */
+    :root {
+      color-scheme: dark;
+      --bg: #11161a;
+      --surface: #1a2128;
+      --surface-2: #212b33;
+      --code-bg: #0e1317;
+      --border: #2b3741;
+      --border-soft: #222c34;
+      --text: #e6edf3;
+      --text-dim: #94a3af;
+      --text-faint: #67747f;
+      --accent: #35d0b5;
+      --accent-hi: #55e5cb;
+      --danger: #ff7d7d;
+      --warn: #f0b45e;
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      --radius: 10px;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 14px 32px -18px rgba(0,0,0,.8);
+    }
     * { box-sizing: border-box; }
+    html { scrollbar-gutter: stable; }
     body {
-      font-family: system-ui, sans-serif;
-      margin: 0;
-      padding: 1.5rem;
-      max-width: 1100px;
-      margin-inline: auto;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      margin: 0 auto;
+      padding: 1.75rem 1.5rem 3rem;
+      max-width: 1180px;
+      background:
+        radial-gradient(1100px 520px at 50% -8%, #1b2830 0%, transparent 70%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
     }
-    h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+
+    /* ---- Scrollbars ---- */
+    * { scrollbar-width: thin; scrollbar-color: #38454f transparent; }
+    ::-webkit-scrollbar { width: 11px; height: 11px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #35424c; border-radius: 8px;
+      border: 3px solid transparent; background-clip: content-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #475865; background-clip: content-box; }
+
+    /* ---- Masthead ---- */
     .banner {
-      display: flex; align-items: center; justify-content: center; gap: .6rem;
-      background: #2b3339; border-radius: 8px; padding: .6rem 1rem; margin-bottom: .25rem;
+      display: flex; flex-direction: column; align-items: center; gap: .1rem;
+      position: relative; isolation: isolate;
+      padding: .9rem 1rem 1.1rem;
+      margin-bottom: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: linear-gradient(150deg, #1d262d 0%, #141a20 55%, #121a1e 100%);
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }
-    .banner img { max-width: 100%; height: auto; display: block; }
-    .banner .repl-tag { font-size: 1.2rem; font-weight: 600; color: #eee; opacity: .85; }
-    p.sub { margin: 0 0 1rem; opacity: .7; font-size: .9rem; }
-    .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
-    button {
-      font: inherit; padding: .45rem .9rem; border: 1px solid #8888; border-radius: 6px;
-      background: #f4f4f4; cursor: pointer;
+    /* teal bloom behind the mark, echoing the art's glow */
+    .banner::before {
+      content: ""; position: absolute; z-index: -1; inset: 0;
+      background: radial-gradient(460px 150px at 50% 45%, rgba(53,208,181,.13), transparent 72%);
     }
-    button:hover { background: #e8e8e8; }
-    #runBtn { background: #0b7; border-color: #0b7; color: #fff; font-weight: 600; }
-    #runBtn:hover { background: #0a6; }
-    #fileName { margin-left: auto; font-size: .85rem; opacity: .8; font-family: ui-monospace, monospace; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
-    textarea {
-      width: 100%; height: 340px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      font-size: .95rem; line-height: 1.5; padding: .75rem; border: 1px solid #8886; border-radius: 8px;
-      resize: vertical; background: #fff; color: #111;
+    /* The art carries its own dark ground, so feather all four edges into the
+       card instead of letting its rectangle read as a pasted-on patch. */
+    .banner img {
+      max-width: min(702px, 100%); width: 100%; height: auto; display: block;
+      -webkit-mask-image:
+        linear-gradient(to right, transparent, #000 8%, #000 92%, transparent),
+        linear-gradient(to bottom, transparent, #000 14%, #000 86%, transparent);
+      -webkit-mask-composite: source-in;
+      mask-image:
+        linear-gradient(to right, transparent, #000 8%, #000 92%, transparent),
+        linear-gradient(to bottom, transparent, #000 14%, #000 86%, transparent);
+      mask-composite: intersect;
     }
-    @media (prefers-color-scheme: dark) { textarea { background: #1b1b1b; color: #eee; } }
-    .status { margin: .6rem 0; font-size: .85rem; min-height: 1.2em; }
-    .status.busy { color: #b70; } .status.ok { color: #087a2f; } .status.err { color: #c40000; }
-    .result {
-      font-size: 1.6rem; font-weight: bold; padding: .8rem 1rem; border-radius: 8px;
-      background: #f2f2f2; color: #333; margin-bottom: 1rem;
+    .banner .repl-tag {
+      font-size: .72rem; font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
+      color: var(--accent); padding: .22rem .7rem; border-radius: 999px;
+      border: 1px solid rgba(53,208,181,.35); background: rgba(53,208,181,.08);
     }
-    .result.ok { background: #e6ffed; color: #087a2f; }
-    .result.err { background: #ffecec; color: #c40000; font-size: 1rem; }
-    details { border: 1px solid #8886; border-radius: 8px; margin-bottom: .6rem; }
-    summary { cursor: pointer; padding: .5rem .75rem; font-weight: 600; }
-    pre {
-      margin: 0; padding: .75rem; overflow-x: auto; font-size: .82rem;
-      border-top: 1px solid #8884; background: #00000008;
+
+    p.sub {
+      margin: 0 0 .7rem; text-align: center;
+      color: var(--text-dim); font-size: .92rem;
     }
-    .tabs { display: flex; gap: .25rem; border-bottom: 1px solid #8886; margin-bottom: 1rem; }
+    p.sub strong { color: var(--text); font-weight: 600; }
+
+    /* pipeline stage chips — a visual echo of the panels below */
+    .pipeline {
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+      gap: .35rem; margin: 0 0 1.4rem;
+      font-family: var(--mono); font-size: .72rem;
+    }
+    .pipeline span {
+      padding: .2rem .6rem; border-radius: 999px;
+      background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-dim);
+    }
+    .pipeline span:last-child { color: var(--accent); border-color: rgba(53,208,181,.3); }
+    .pipeline i { color: var(--text-faint); font-style: normal; }
+
+    /* ---- Toolbar ---- */
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: .45rem; align-items: center;
+      padding: .55rem; margin-bottom: 1rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; box-shadow: var(--shadow);
+    }
+    .toolbar button {
+      font: inherit; font-size: .88rem; font-weight: 500;
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .45rem .85rem; border-radius: 7px; cursor: pointer;
+      color: var(--text-dim); background: transparent;
+      border: 1px solid transparent;
+      transition: background .13s, color .13s, border-color .13s;
+    }
+    .toolbar button:hover { background: var(--surface-2); color: var(--text); }
+    .toolbar button:active { transform: translateY(1px); }
+    .toolbar button:focus-visible {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(53,208,181,.2);
+    }
+    #runBtn {
+      background: linear-gradient(180deg, #3ad9bd, #23b79c);
+      color: #06231d; font-weight: 700; border-color: #23b79c;
+      box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 6px 14px -8px rgba(53,208,181,.9);
+    }
+    #runBtn:hover { background: linear-gradient(180deg, #4ee6ca, #2ac5a8); color: #06231d; }
+    #compileBtn {
+      color: var(--accent); border-color: rgba(53,208,181,.34);
+      background: rgba(53,208,181,.07);
+    }
+    #compileBtn:hover { color: var(--accent-hi); background: rgba(53,208,181,.14); border-color: rgba(53,208,181,.55); }
+    .tb-sep { width: 1px; height: 22px; background: var(--border); margin: 0 .3rem; }
+    #fileName {
+      margin-left: auto; font-family: var(--mono); font-size: .78rem;
+      color: var(--text-dim); padding: .3rem .65rem;
+      background: var(--code-bg); border: 1px solid var(--border-soft); border-radius: 6px;
+    }
+
+    /* ---- Tabs ---- */
+    .tabs {
+      display: flex; gap: .15rem;
+      border-bottom: 1px solid var(--border); margin-bottom: 1.15rem;
+    }
     .tab-btn {
-      font: inherit; font-weight: 600; padding: .55rem 1.1rem; border: none; border-radius: 0;
-      border-bottom: 2px solid transparent; background: none; cursor: pointer; opacity: .6;
+      font: inherit; font-size: .9rem; font-weight: 600;
+      padding: .6rem 1.15rem; cursor: pointer;
+      color: var(--text-faint); background: none;
+      border: none; border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .13s, border-color .13s, background .13s;
     }
-    .tab-btn:hover { opacity: .85; background: #8881; }
-    .tab-btn.active { opacity: 1; border-bottom-color: #0b7; }
+    .tab-btn:hover { color: var(--text-dim); background: rgba(255,255,255,.03); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-btn:focus-visible { outline: none; color: var(--accent); background: rgba(53,208,181,.1); }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
-    #grammar { white-space: pre-wrap; }
+
+    /* ---- Layout ---- */
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 1.1rem;
+      align-items: start;
+    }
+    @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+    @media (min-width: 861px) { .editor-col { position: sticky; top: 1rem; } }
+
+    /* ---- Editor ---- */
+    textarea {
+      width: 100%; min-height: 440px;
+      font-family: var(--mono); font-size: .95rem; line-height: 1.8;
+      padding: 1rem 1.15rem;
+      color: #e9f2ef; background: var(--code-bg);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      resize: vertical; box-shadow: var(--shadow);
+      transition: border-color .13s, box-shadow .13s;
+    }
+    textarea:focus {
+      outline: none; border-color: rgba(53,208,181,.5);
+      box-shadow: 0 0 0 3px rgba(53,208,181,.14), var(--shadow);
+    }
+    textarea::selection { background: rgba(53,208,181,.28); }
+
+    .status {
+      display: flex; align-items: center; gap: .5rem;
+      margin: .7rem .2rem 0; min-height: 1.4em;
+      font-family: var(--mono); font-size: .78rem; color: var(--text-dim);
+    }
+    .status::before {
+      content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-faint);
+    }
+    .status.busy { color: var(--warn); }
+    .status.busy::before { background: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
+    .status.ok { color: var(--accent); }
+    .status.ok::before { background: var(--accent); }
+    .status.err { color: var(--danger); }
+    .status.err::before { background: var(--danger); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+    /* ---- Result ---- */
+    .result {
+      font-size: 1.35rem; font-weight: 700; line-height: 1.35;
+      padding: .9rem 1.1rem; margin-bottom: .9rem;
+      color: var(--text-dim);
+      background: var(--surface);
+      border: 1px solid var(--border); border-left: 4px solid var(--text-faint);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      word-break: break-word;
+    }
+    .result.ok {
+      color: var(--accent-hi); border-left-color: var(--accent);
+      background: linear-gradient(90deg, rgba(53,208,181,.12), var(--surface) 60%);
+    }
+    .result.err {
+      font-size: 1rem; font-weight: 600;
+      color: var(--danger); border-left-color: var(--danger);
+      background: linear-gradient(90deg, rgba(255,125,125,.12), var(--surface) 60%);
+    }
+
+    /* ---- Output panels ---- */
+    details {
+      background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      margin-bottom: .6rem; overflow: hidden;
+    }
+    details[open] { box-shadow: var(--shadow); }
+    summary {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .6rem .85rem; cursor: pointer; user-select: none;
+      font-size: .87rem; font-weight: 600; color: var(--text);
+      transition: background .13s;
+    }
+    summary:hover { background: var(--surface-2); }
+    summary:focus-visible { outline: none; background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+    summary::-webkit-details-marker { display: none; }
+    summary::before {
+      content: ""; flex: none;
+      width: 6px; height: 6px; margin-left: .1rem;
+      border-right: 1.8px solid var(--text-faint); border-bottom: 1.8px solid var(--text-faint);
+      transform: rotate(-45deg); transition: transform .16s ease, border-color .16s;
+    }
+    details[open] > summary::before { transform: rotate(45deg); border-color: var(--accent); }
+    #buildExeBtn {
+      font: inherit; font-size: .74rem; font-weight: 600;
+      margin-left: auto; padding: .28rem .7rem; border-radius: 999px; cursor: pointer;
+      color: var(--accent); background: rgba(53,208,181,.09);
+      border: 1px solid rgba(53,208,181,.34);
+      transition: background .13s, color .13s, border-color .13s;
+    }
+    #buildExeBtn:hover:not(:disabled) {
+      color: var(--accent-hi); background: rgba(53,208,181,.18); border-color: rgba(53,208,181,.6);
+    }
+    #buildExeBtn:disabled {
+      color: var(--text-faint); background: transparent;
+      border-color: var(--border); cursor: not-allowed; opacity: .65;
+    }
+    pre {
+      margin: 0; padding: .85rem 1rem;
+      max-height: 360px; overflow: auto;
+      font-family: var(--mono); font-size: .79rem; line-height: 1.65;
+      color: #cfdcd9; background: var(--code-bg);
+      border-top: 1px solid var(--border-soft);
+    }
+    pre:empty::before {
+      content: "—"; color: var(--text-faint);
+    }
+
+    /* ---- Syntax reference tab ---- */
+    #grammar {
+      white-space: pre-wrap; word-wrap: break-word;
+      max-height: none; padding: 1.4rem 1.6rem;
+      font-size: .84rem; line-height: 1.75;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
   </style>
 </head>
 <body>
@@ -1429,11 +1651,15 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
     <img src="/assets/Banner2.png" alt="HaikuScript">
     <span class="repl-tag">REPL</span>
   </div>
-  <p class="sub">Edit the poem, then Run — parse → syllable audit → AST → WAT → WASM → execute, all in your browser.</p>
+  <p class="sub">Write the poem, press <strong>Run</strong> — every stage runs in your browser.</p>
+  <div class="pipeline">
+    <span>lex</span><i>→</i><span>syllable audit</span><i>→</i><span>AST</span><i>→</i><span>WAT</span><i>→</i><span>WASM</span><i>→</i><span>execute</span>
+  </div>
 
   <div class="toolbar">
     <button id="runBtn" title="Ctrl+Enter">▶ Run</button>
     <button id="compileBtn" title="Ctrl+Shift+Enter">⚙ Compile</button>
+    <span class="tb-sep"></span>
     <button id="openBtn">Open…</button>
     <button id="saveBtn" title="Ctrl+S">Save</button>
     <button id="saveAsBtn">Save As…</button>
@@ -1448,7 +1674,7 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
 
   <div id="tabRepl" class="tab-panel active">
     <div class="grid">
-      <div>
+      <div class="editor-col">
         <textarea id="editor" spellcheck="false"></textarea>
         <div id="status" class="status"></div>
       </div>
