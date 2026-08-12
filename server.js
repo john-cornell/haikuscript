@@ -21,10 +21,16 @@ const MIME = {
 };
 
 function serveStatic(req, res) {
-  let urlPath = decodeURIComponent(req.url.split('?')[0]);
-  if (urlPath === '/') urlPath = '/repl.html';
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent(req.url.split('?')[0]);
+  } catch {
+    res.writeHead(400);
+    return res.end('Bad request');
+  }
+  if (urlPath === '/') urlPath = '/index.html';
   const filePath = path.normalize(path.join(ROOT, urlPath));
-  if (!filePath.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
+  if (!filePath.startsWith(ROOT + path.sep) && filePath !== ROOT) { res.writeHead(403); return res.end(); }
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
@@ -38,7 +44,7 @@ function handleBuildExe(req, res) {
   req.on('end', () => {
     let il;
     try { il = JSON.parse(body).il; } catch { il = null; }
-    if (!il) {
+    if (typeof il !== 'string' || !il) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ error: 'Missing "il" in request body' }));
     }
@@ -62,6 +68,7 @@ function handleBuildExe(req, res) {
         }
         fs.readFile(exePath, (readErr, exeData) => {
           fs.unlink(exePath, () => {});
+          fs.unlink(exePath.replace(/\.exe$/, '.pdb'), () => {});
           if (readErr) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ error: readErr.message }));
@@ -82,6 +89,6 @@ http.createServer((req, res) => {
   if (req.method === 'GET') return serveStatic(req, res);
   res.writeHead(405);
   res.end();
-}).listen(PORT, () => {
+}).listen(PORT, '127.0.0.1', () => {
   console.log(`HaikuScript REPL server: http://localhost:${PORT}/repl.html`);
 });

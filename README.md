@@ -21,7 +21,6 @@ This project uses the Node ecosystem, so there is no `requirements.txt`. The equ
 | Node.js            | `>=20` (`.nvmrc`: `24.15.0`) | `24.15.0`        |
 | npm                | `>=10`                       | `11.12.1`        |
 | wabt (dependency)  | `^1.0.36`                    | `1.0.39`         |
-| serve (dependency) | `^14.2.1`                    | `14.2.6`         |
 
 > **No build step.** The lexer is plain JavaScript (`haiku-core.js`), so nothing has to be compiled ahead of time — `npm install` is the whole setup. The grammar is trivial (a line is a run of letter-words), so we tokenize by hand. A Tree-sitter grammar (`grammar.js`) and `queries/highlights.scm` are kept as an **optional** way to get editor syntax highlighting; they are **not** needed to run. (For a bigger language you'd let Tree-sitter generate the parser — here it's overkill.)
 
@@ -74,7 +73,8 @@ Compile the poem into browser-executable bytecode and serve it:
 # 1. Compile source logic directly into .wat and .wasm blocks
 npm run compile
 
-# 2. Boot up a local static server
+# 2. Boot up a local static server (runs server.js — a zero-dependency
+#    Node script, not the old `serve` package)
 npm run serve
 ```
 
@@ -98,14 +98,18 @@ The static server from Phase 3 also serves a full REPL that runs **every** stage
 npm run serve
 ```
 
-Or double-click **`repl.bat`** — starts server and opens the REPL tab for you.
+Or double-click **`repl.bat`** — checks that `node_modules` is present, starts the server (`server.js`), and opens the REPL tab for you.
 
 Then open **`http://localhost:3000/repl.html`**.
 
 - **Edit on screen** — type HaikuScript into the editor and press **Run** (or **Ctrl + Enter**).
-- The page runs the whole pipeline client-side: lex → syllable audit → AST → WAT → WASM → execute, showing the **Tokens**, **AST**, **WAT**, **CIL / IL**, and final **Result** panels. The CIL/IL panel is generated from the exact same AST as the WAT panel, side by side, so the two backends can be compared instruction-by-instruction — it's illustrative-only text (an ildasm-style disassembly listing), not something assembled into a real .NET module or executed.
+- **Compile** (or **Ctrl + Shift + Enter**) runs the same lex → AST → WAT → CIL → assemble pipeline as Run, but stops before executing — no `input()` prompts fire. Handy for inspecting the generated WAT/IL for a poem that reads from stdin, without having to answer its prompts first.
+- The page runs the whole pipeline client-side: lex → syllable audit → AST → WAT → WASM → execute, showing the **Tokens**, **AST**, **WAT**, **CIL / IL**, and final **Result** panels. The CIL/IL panel is generated from the exact same AST as the WAT panel, side by side, so the two backends can be compared instruction-by-instruction — and it's genuinely buildable: the **Build .exe** button next to the CIL/IL panel's header posts the generated IL to the server (`server.js`), which shells out to the real `ilasm.exe` that ships with the Windows .NET Framework (no separate install — see `ILASM_PATH` below if it's not at the default path), and hands back a working `HaikuProgram.exe` for download.
+- A **Syntax Reference** tab sits alongside the main **REPL** tab and renders `GRAMMAR.md` in place, for quick lookup without leaving the page.
 - **Errors** surface with the offending line number and highlight that line in the editor.
 - **Open… / Save / Save As…** use the browser File System Access API (Chrome/Edge). On other browsers these fall back to a file picker + download automatically.
+
+> **Build .exe requirements:** `server.js` expects `ilasm.exe` at `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\ilasm.exe` by default (the copy that ships with the Windows .NET Framework — no separate install on a normal Windows box). If yours lives elsewhere, set the `ILASM_PATH` environment variable before starting the server. `npm run serve` / `repl.bat` only need this if you actually click **Build .exe**; the rest of the REPL works without it.
 
 **Random numbers** are built into the compiler itself (a self-contained xorshift PRNG emitted into the WASM — no host randomness). Any of the `RANDOM` keywords — `dream` (1 syl), `random` / `something` (2 syl), or `imagine` / `randomly` (3 syl) — sets a variable to a random `0`–`99`; pick whichever fits the line's meter. Both the standalone verb form (`Something the x`) and the assignment form (`Set x to something`) work. Each compile bakes a fresh seed, so every Run gives a new number. Example (Result = a random 0–99):
 

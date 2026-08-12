@@ -92,10 +92,10 @@
     $('wat').textContent = wat;
     const il = HaikuCore.generateIl(ast, seed);
     $('il').textContent = il;
-    $('buildExeBtn').disabled = false;
 
     const module = wabt.parseWat('repl.wat', wat);
     const { buffer } = module.toBinary({});
+    $('buildExeBtn').disabled = false;
 
     return { ast, wat, il, wasmBuffer: buffer };
   }
@@ -126,7 +126,8 @@
   }
 
   // Same pipeline as Run, but stops after assembling — never executes, so no
-  // input() prompts fire and Printed Output is left untouched.
+  // input() prompts fire. Printed Output is still cleared by resetPanels(),
+  // same as Run, so every click starts from a clean slate.
   async function compileOnly() {
     resetPanels();
     try {
@@ -144,6 +145,8 @@
   async function buildExe() {
     const il = $('il').textContent;
     if (!il) return;
+    const btn = $('buildExeBtn');
+    btn.disabled = true;
     setStatus('Building .exe…', 'busy');
     try {
       const resp = await fetch('/build-exe', {
@@ -152,8 +155,12 @@
         body: JSON.stringify({ il })
       });
       if (!resp.ok) {
-        const { error } = await resp.json();
-        throw new Error(error);
+        let message = resp.statusText;
+        try {
+          const body = await resp.json();
+          if (body && body.error) message = body.error;
+        } catch {}
+        throw new Error(message);
       }
       const blob = await resp.blob();
       const a = document.createElement('a');
@@ -164,6 +171,8 @@
       setStatus('Built HaikuProgram.exe ✓', 'ok');
     } catch (err) {
       setStatus('Build failed: ' + err.message, 'err');
+    } finally {
+      btn.disabled = false;
     }
   }
 

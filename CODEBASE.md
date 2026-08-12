@@ -2,7 +2,7 @@
 
 *Part of the HaikuScript docs: CODEBASE (this file, full source) · [README](README.md) (how to build & run) · [GRAMMAR](GRAMMAR.md) (how to write the language).*
 
-This file contains the complete source code for the HaikuScript compiler frontend, syntax highlighting queries, the shared compiler core, AST parser, WebAssembly code generator, browser REPL, and native VS Code extension.
+This file contains the complete source code for the HaikuScript compiler frontend, syntax highlighting queries, the shared compiler core, AST parser, WebAssembly and CIL code generators, browser REPL and its static/`ilasm.exe` build server, and native VS Code extension.
 
 ## 1. Project Configuration (`package.json`)
 ```json
@@ -38,11 +38,10 @@ This file contains the complete source code for the HaikuScript compiler fronten
     "tokens": "node haiku.js --dump-tokens src/fibonacci.hk",
     "ast": "node haiku.js --dump-ast src/fibonacci.hk",
     "compile": "node haiku.js --compile src/fibonacci.hk",
-    "serve": "serve .",
-    "repl": "serve ."
+    "serve": "node server.js",
+    "repl": "node server.js"
   },
   "dependencies": {
-    "serve": "^14.2.1",
     "wabt": "^1.0.36"
   }
 }
@@ -104,7 +103,7 @@ module.exports = grammar({
 > Note: these Tree-sitter files predate the `PRINT` vocabulary and the short (1-2 char) named-identifier support added to the hand lexer in §4 — they still highlight the original fixed vocabulary correctly, but don't yet tag `print`/`say`/`announce`/etc. as keywords or arbitrary `a`, `r3`, `ww`-style names as variables. Editor highlighting only; doesn't affect compilation.
 
 ## 4. Shared Compiler Core (`haiku-core.js`)
-Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of truth for the vocabulary, syllable audit, AST parser, and code generators — consumed by both the Node CLI and the browser REPL. The core now ships two backends walking the exact same AST: `generateWat` (WebAssembly Text, assembled to real WASM and executed) and `generateIl` (an ildasm-style CIL disassembly listing, illustrative text only — nothing is assembled into a real .NET module or executed). Both take the same `seed` argument so their emitted PRNG literals are directly comparable — the "one AST, multiple backends" point of the talk.
+Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of truth for the vocabulary, syllable audit, AST parser, and code generators — consumed by both the Node CLI and the browser REPL. The core now ships two backends walking the exact same AST: `generateWat` (WebAssembly Text, assembled to real WASM and executed) and `generateIl` (an ildasm-style CIL disassembly listing that is genuinely buildable — it emits a full assembly manifest, a `HaikuHost` class, and a `Main` entry point, so the REPL's **Build .exe** button can hand it straight to `ilasm.exe` and get back a working `HaikuProgram.exe`). Both take the same `seed` argument so their emitted PRNG literals are directly comparable — the "one AST, multiple backends" point of the talk.
 ```javascript
 // HaikuScript shared compiler core — environment-agnostic (no fs, no process, no DOM).
 // Consumed by the Node CLI (haiku.js) and the browser REPL (repl.js) so the
@@ -648,11 +647,11 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
   }
 
   // PHASE 3b: Code Generation — turn the AST into an ildasm-style CIL
-  // disassembly listing (text only: nothing is assembled into a real .dll,
-  // and nothing here executes). Walks the exact same AST as generateWat via
+  // listing that ilasm can actually assemble into a working .exe (see the
+  // REPL's Build .exe button). Walks the exact same AST as generateWat via
   // a parallel walk()/emitCondition() pair, so the two backends are easy to
   // compare instruction-by-instruction. See
-  // docs/superpowers/specs/2026-08-10-il-backend-design.md.
+  // docs/superpowers/specs/2026-08-11-repl-syntax-compile-exe-design.md.
   function generateIl(ast, seed) {
     const RNG_SEED = ((seed >>> 0) || 0x9E3779B9);
     const RNG_SEED_SIGNED = RNG_SEED > 0x7FFFFFFF ? RNG_SEED - 0x100000000 : RNG_SEED;
@@ -771,6 +770,7 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       'ldc.i4.s': 2, 'ldc.i4': 5,
       'ldloc.0': 1, 'ldloc.1': 1, 'ldloc.2': 1, 'ldloc.3': 1, 'ldloc.s': 2,
       'stloc.0': 1, 'stloc.1': 1, 'stloc.2': 1, 'stloc.3': 1, 'stloc.s': 2,
+      'ldarg.0': 1,
       add: 1, ceq: 2, clt: 2, cgt: 2, and: 1, or: 1, xor: 1, ret: 1,
       shl: 1, 'shr.un': 1, 'rem.un': 1,
       'brfalse.s': 2, 'brtrue.s': 2, 'br.s': 2,
@@ -841,9 +841,58 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
     const cctorLabelAddr = resolveAddresses(cctorInstrs);
     const cctorText = renderInstrs(cctorInstrs, cctorLabelAddr, '    ');
 
+    // ---- HaikuHost.Print/Input — real Console-backed implementations, plus
+    // HaikuProgram.Main as the assembly's entry point. Unlike Compute()'s
+    // body, these are small and fixed regardless of the AST, so they're
+    // written directly as instruction lists instead of via walk(). ----------
+    const printInstrs = [
+      { op: 'ldarg.0' },
+      { op: 'call', arg: 'void [mscorlib]System.Console::WriteLine(int32)' },
+      { op: 'ret' }
+    ];
+    const inputInstrs = [
+      { op: 'call', arg: 'string [mscorlib]System.Console::ReadLine()' },
+      { op: 'stloc.0' },
+      { op: 'ldloc.0' },
+      { op: 'call', arg: 'int32 [mscorlib]System.Int32::Parse(string)' },
+      { op: 'ret' }
+    ];
+    const mainInstrs = [
+      { op: 'call', arg: 'int32 HaikuProgram::Compute()' },
+      { op: 'call', arg: 'void [mscorlib]System.Console::WriteLine(int32)' },
+      { op: 'ret' }
+    ];
+    const printLabelAddr = resolveAddresses(printInstrs);
+    const printText = renderInstrs(printInstrs, printLabelAddr, '    ');
+    const inputLabelAddr = resolveAddresses(inputInstrs);
+    const inputText = renderInstrs(inputInstrs, inputLabelAddr, '    ');
+    const mainLabelAddr = resolveAddresses(mainInstrs);
+    const mainText = renderInstrs(mainInstrs, mainLabelAddr, '    ');
+
     return (
-      '// ildasm-style disassembly emitted directly by HaikuScript — illustrative text\n' +
-      '// only: not assembled into a real module, and not executed.\n' +
+      '// ildasm-style disassembly emitted directly by HaikuScript — buildable\n' +
+      '// with `ilasm <file> /exe` (Windows .NET Framework or Mono\'s ilasm).\n' +
+      '.assembly extern mscorlib {}\n' +
+      '.assembly HaikuProgram\n' +
+      '{\n' +
+      '  .ver 1:0:0:0\n' +
+      '}\n' +
+      '.module HaikuProgram.exe\n\n' +
+      '.class private auto ansi HaikuHost\n' +
+      '       extends [mscorlib]System.Object\n' +
+      '{\n' +
+      '  .method public hidebysig static void Print(int32 v) cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n\n' +
+      printText +
+      '  } // end of method HaikuHost::Print\n\n' +
+      '  .method public hidebysig static int32 Input() cil managed\n' +
+      '  {\n' +
+      '    .maxstack 8\n' +
+      '    .locals init ([0] string s)\n\n' +
+      inputText +
+      '  } // end of method HaikuHost::Input\n' +
+      '} // end of class HaikuHost\n\n' +
       '.class private auto ansi HaikuProgram\n' +
       '       extends [mscorlib]System.Object\n' +
       '{\n' +
@@ -864,7 +913,13 @@ Environment-agnostic pipeline (no `fs`, `process`, or DOM). Single source of tru
       '  {\n' +
       '    .maxstack 8\n\n' +
       cctorText +
-      '  } // end of method HaikuProgram::.cctor\n' +
+      '  } // end of method HaikuProgram::.cctor\n\n' +
+      '  .method public hidebysig static void Main() cil managed\n' +
+      '  {\n' +
+      '    .entrypoint\n' +
+      '    .maxstack 8\n\n' +
+      mainText +
+      '  } // end of method HaikuProgram::Main\n' +
       '} // end of class HaikuProgram\n'
     );
   }
@@ -1002,7 +1057,7 @@ runCompiler();
 ```
 
 ## 6. Browser REPL Driver (`repl.js`)
-Runs the whole pipeline client-side: the shared core lexes/audits/parses/generates from the editor text, WABT assembles WASM in-browser, and `WebAssembly.instantiate` executes it — supplying the same `env.print` import as the CLI (collecting values into the **Printed Output** panel), plus `env.input` backed by `window.prompt` (synchronous, same reason it works — WASM imports must return immediately). Also wires up file open/save.
+Runs the whole pipeline client-side. `compilePipeline()` is the shared prefix of Run and Compile: the shared core lexes/audits/parses/generates WAT *and* IL from the editor text, then WABT assembles the WAT to WASM in-browser — populating the Tokens/AST/WAT/IL panels and enabling the **Build .exe** button, but never executing anything. `run()` calls `compilePipeline()` and then `WebAssembly.instantiate`s the result, supplying the same `env.print` import as the CLI (collecting values into the **Printed Output** panel) plus `env.input` backed by `window.prompt` (synchronous, same reason it works — WASM imports must return immediately). `compileOnly()` calls `compilePipeline()` and stops there — no `input()` prompts fire, but Printed Output is still cleared by the shared `resetPanels()`, same as Run. `buildExe()` POSTs the displayed IL text to the server's `/build-exe` route (`server.js`, which shells out to `ilasm.exe`) and downloads the resulting `HaikuProgram.exe`; the button disables itself for the duration of the request as a re-entrancy guard. `switchTab()` toggles between the **REPL** and **Syntax Reference** tabs. Also wires up file open/save.
 ```javascript
 // HaikuScript browser REPL — runs the full compiler pipeline client-side.
 // Globals provided by the <script> tags in repl.html:
@@ -1059,8 +1114,7 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
     editor.setSelectionRange(start, end);
   }
 
-  // Full pipeline: parse -> audit/tokenize -> AST -> WAT -> WASM -> execute.
-  async function run() {
+  function resetPanels() {
     $('result').className = 'result';
     $('result').textContent = 'Running…';
     $('tokens').textContent = '';
@@ -1068,35 +1122,59 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
     $('wat').textContent = '';
     $('il').textContent = '';
     $('printed').textContent = '';
+    $('buildExeBtn').disabled = true;
+  }
 
+  function reportError(err) {
+    const line = err && err.line;
+    $('result').textContent = (line ? 'Error [Line ' + line + ']: ' : 'Error: ') + err.message;
+    $('result').className = 'result err';
+    setStatus('Failed ✗', 'err');
+    highlightLine(line);
+  }
+
+  // Shared prefix of Run and Compile: lex -> parse -> generate WAT & CIL -> assemble WASM.
+  // Populates Tokens/AST/WAT/IL panels. Never executes anything.
+  async function compilePipeline() {
+    await ensureToolchain();
+    const source = editor.value;
+
+    setStatus('Phase 1 — lexing & syllable audit…', 'busy');
+    const tokens = HaikuCore.tokenize(source);
+    $('tokens').textContent = JSON.stringify(tokens, null, 2);
+
+    setStatus('Phase 2 — building AST…', 'busy');
+    const ast = HaikuCore.parseProgram(tokens);
+    $('ast').textContent = JSON.stringify(ast, null, 2);
+
+    setStatus('Phase 3 — generating WAT & CIL, assembling WASM…', 'busy');
+    const seed = Date.now();
+    const wat = HaikuCore.generateWat(ast, seed);
+    $('wat').textContent = wat;
+    const il = HaikuCore.generateIl(ast, seed);
+    $('il').textContent = il;
+
+    const module = wabt.parseWat('repl.wat', wat);
+    const { buffer } = module.toBinary({});
+    $('buildExeBtn').disabled = false;
+
+    return { ast, wat, il, wasmBuffer: buffer };
+  }
+
+  // Full pipeline: compile, then execute the assembled WASM.
+  async function run() {
+    resetPanels();
     try {
-      await ensureToolchain();
-      const source = editor.value;
+      const { wasmBuffer } = await compilePipeline();
 
-      setStatus('Phase 1 — lexing & syllable audit…', 'busy');
-      const tokens = HaikuCore.tokenize(source);
-      $('tokens').textContent = JSON.stringify(tokens, null, 2);
-
-      setStatus('Phase 2 — building AST…', 'busy');
-      const ast = HaikuCore.parseProgram(tokens);
-      $('ast').textContent = JSON.stringify(ast, null, 2);
-
-      setStatus('Phase 3 — generating WAT & CIL, assembling WASM…', 'busy');
-      const seed = Date.now();
-      const wat = HaikuCore.generateWat(ast, seed);
-      $('wat').textContent = wat;
-      const il = HaikuCore.generateIl(ast, seed);
-      $('il').textContent = il;
-
-      const module = wabt.parseWat('repl.wat', wat);
-      const { buffer } = module.toBinary({});
+      setStatus('Phase 4 — executing…', 'busy');
       const printed = [];
       const readInput = () => {
         const value = parseInt(window.prompt('Input:') || '', 10);
         return Number.isNaN(value) ? 0 : value;
       };
       const importObject = { env: { print: (v) => printed.push(v), input: readInput } };
-      const { instance } = await WebAssembly.instantiate(buffer, importObject);
+      const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
 
       const value = instance.exports.compute();
       $('printed').textContent = printed.length ? printed.join('\n') : '(none)';
@@ -1104,11 +1182,58 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
       $('result').className = 'result ok';
       setStatus('Done ✓', 'ok');
     } catch (err) {
-      const line = err && err.line;
-      $('result').textContent = (line ? 'Error [Line ' + line + ']: ' : 'Error: ') + err.message;
-      $('result').className = 'result err';
-      setStatus('Failed ✗', 'err');
-      highlightLine(line);
+      reportError(err);
+    }
+  }
+
+  // Same pipeline as Run, but stops after assembling — never executes, so no
+  // input() prompts fire. Printed Output is still cleared by resetPanels(),
+  // same as Run, so every click starts from a clean slate.
+  async function compileOnly() {
+    resetPanels();
+    try {
+      await compilePipeline();
+      $('result').textContent = 'Compiled ✓ (not run)';
+      $('result').className = 'result ok';
+      setStatus('Compiled ✓', 'ok');
+    } catch (err) {
+      reportError(err);
+    }
+  }
+
+  // POSTs the currently-displayed IL to the server's /build-exe route
+  // (server.js, which shells out to ilasm.exe) and downloads the result.
+  async function buildExe() {
+    const il = $('il').textContent;
+    if (!il) return;
+    const btn = $('buildExeBtn');
+    btn.disabled = true;
+    setStatus('Building .exe…', 'busy');
+    try {
+      const resp = await fetch('/build-exe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ il })
+      });
+      if (!resp.ok) {
+        let message = resp.statusText;
+        try {
+          const body = await resp.json();
+          if (body && body.error) message = body.error;
+        } catch {}
+        throw new Error(message);
+      }
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'HaikuProgram.exe';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus('Built HaikuProgram.exe ✓', 'ok');
+    } catch (err) {
+      setStatus('Build failed: ' + err.message, 'err');
+    } finally {
+      btn.disabled = false;
     }
   }
 
@@ -1180,6 +1305,14 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
     }
   }
 
+  // ---- Tabs ---------------------------------------------------------------
+  function switchTab(name) {
+    $('tabBtnRepl').classList.toggle('active', name === 'repl');
+    $('tabBtnGrammar').classList.toggle('active', name === 'grammar');
+    $('tabRepl').classList.toggle('active', name === 'repl');
+    $('tabGrammar').classList.toggle('active', name === 'grammar');
+  }
+
   // ---- Wiring ------------------------------------------------------------
   function init() {
     editor.value = DEFAULT_SOURCE;
@@ -1188,14 +1321,25 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
       if (t) { editor.value = t; fileName.textContent = 'fibonacci.hk'; }
     }).catch(() => {});
 
+    // Static reference panel — fetched once at load, not tied to Run/Compile.
+    fetch('/GRAMMAR.md').then(r => r.ok ? r.text() : null).then(t => {
+      if (t) $('grammar').textContent = t;
+    }).catch(() => {});
+
+    $('tabBtnRepl').addEventListener('click', () => switchTab('repl'));
+    $('tabBtnGrammar').addEventListener('click', () => switchTab('grammar'));
+
     $('runBtn').addEventListener('click', run);
+    $('compileBtn').addEventListener('click', compileOnly);
+    $('buildExeBtn').addEventListener('click', buildExe);
     $('openBtn').addEventListener('click', openFile);
     $('saveBtn').addEventListener('click', () => saveFile(false));
     $('saveAsBtn').addEventListener('click', () => saveFile(true));
     $('filePicker').addEventListener('change', openViaInput);
 
     editor.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'Enter') { e.preventDefault(); run(); }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') { e.preventDefault(); compileOnly(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(false); }
     });
 
@@ -1211,7 +1355,7 @@ Runs the whole pipeline client-side: the shared core lexes/audits/parses/generat
 ```
 
 ## 7. Browser REPL Page (`repl.html`)
-Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight out of `node_modules`, then the REPL driver. The **Printed Output** panel shows every value a `PrintStatement` surfaced mid-run, in order, above the final **Result**.
+Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight out of `node_modules`, then the REPL driver. A banner and two tabs — **REPL** and **Syntax Reference** — sit above the main grid; the Syntax Reference tab renders `GRAMMAR.md`, fetched once at load by `repl.js`. The toolbar has both **▶ Run** (Ctrl+Enter) and **⚙ Compile** (Ctrl+Shift+Enter). The CIL/IL panel's `<summary>` also hosts the **Build .exe** button, with an inline `onclick` that stops the click from bubbling up and collapsing the `<details>` panel. The **Printed Output** panel shows every value a `PrintStatement` surfaced mid-run, in order, above the final **Result**.
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -1230,6 +1374,12 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
       margin-inline: auto;
     }
     h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+    .banner {
+      display: flex; align-items: center; justify-content: center; gap: .6rem;
+      background: #2b3339; border-radius: 8px; padding: .6rem 1rem; margin-bottom: .25rem;
+    }
+    .banner img { max-width: 100%; height: auto; display: block; }
+    .banner .repl-tag { font-size: 1.2rem; font-weight: 600; color: #eee; opacity: .85; }
     p.sub { margin: 0 0 1rem; opacity: .7; font-size: .9rem; }
     .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
     button {
@@ -1262,14 +1412,28 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
       margin: 0; padding: .75rem; overflow-x: auto; font-size: .82rem;
       border-top: 1px solid #8884; background: #00000008;
     }
+    .tabs { display: flex; gap: .25rem; border-bottom: 1px solid #8886; margin-bottom: 1rem; }
+    .tab-btn {
+      font: inherit; font-weight: 600; padding: .55rem 1.1rem; border: none; border-radius: 0;
+      border-bottom: 2px solid transparent; background: none; cursor: pointer; opacity: .6;
+    }
+    .tab-btn:hover { opacity: .85; background: #8881; }
+    .tab-btn.active { opacity: 1; border-bottom-color: #0b7; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    #grammar { white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <h1>HaikuScript REPL</h1>
+  <div class="banner">
+    <img src="/assets/Banner2.png" alt="HaikuScript">
+    <span class="repl-tag">REPL</span>
+  </div>
   <p class="sub">Edit the poem, then Run — parse → syllable audit → AST → WAT → WASM → execute, all in your browser.</p>
 
   <div class="toolbar">
     <button id="runBtn" title="Ctrl+Enter">▶ Run</button>
+    <button id="compileBtn" title="Ctrl+Shift+Enter">⚙ Compile</button>
     <button id="openBtn">Open…</button>
     <button id="saveBtn" title="Ctrl+S">Save</button>
     <button id="saveAsBtn">Save As…</button>
@@ -1277,34 +1441,45 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
     <input id="filePicker" type="file" accept=".hk,text/plain" hidden>
   </div>
 
-  <div class="grid">
-    <div>
-      <textarea id="editor" spellcheck="false"></textarea>
-      <div id="status" class="status"></div>
+  <div class="tabs">
+    <button class="tab-btn active" id="tabBtnRepl" data-tab="repl">REPL</button>
+    <button class="tab-btn" id="tabBtnGrammar" data-tab="grammar">Syntax Reference</button>
+  </div>
+
+  <div id="tabRepl" class="tab-panel active">
+    <div class="grid">
+      <div>
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div id="status" class="status"></div>
+      </div>
+      <div>
+        <div id="result" class="result">—</div>
+        <details open>
+          <summary>Printed Output</summary>
+          <pre id="printed"></pre>
+        </details>
+        <details open>
+          <summary>Tokens</summary>
+          <pre id="tokens"></pre>
+        </details>
+        <details>
+          <summary>AST</summary>
+          <pre id="ast"></pre>
+        </details>
+        <details>
+          <summary>WebAssembly Text (.wat)</summary>
+          <pre id="wat"></pre>
+        </details>
+        <details>
+          <summary>CIL / IL (ildasm-style) <button id="buildExeBtn" disabled onclick="event.preventDefault(); event.stopPropagation();">Build .exe</button></summary>
+          <pre id="il"></pre>
+        </details>
+      </div>
     </div>
-    <div>
-      <div id="result" class="result">—</div>
-      <details open>
-        <summary>Printed Output</summary>
-        <pre id="printed"></pre>
-      </details>
-      <details open>
-        <summary>Tokens</summary>
-        <pre id="tokens"></pre>
-      </details>
-      <details>
-        <summary>AST</summary>
-        <pre id="ast"></pre>
-      </details>
-      <details>
-        <summary>WebAssembly Text (.wat)</summary>
-        <pre id="wat"></pre>
-      </details>
-      <details>
-        <summary>CIL / IL (ildasm-style)</summary>
-        <pre id="il"></pre>
-      </details>
-    </div>
+  </div>
+
+  <div id="tabGrammar" class="tab-panel">
+    <pre id="grammar"></pre>
   </div>
 
   <!-- Shared compiler core, then the WABT assembler, then the REPL driver -->
@@ -1315,7 +1490,106 @@ Served at `/repl.html`. Loads the shared core and the `wabt` assembler straight 
 </html>
 ```
 
-## 8. VS Code IDE Extension Connector (`vsc-extension/extension.js`)
+## 8. REPL Server (`server.js`)
+Zero-dependency Node script (built-ins only) that replaced the old `serve` package. Two responsibilities: serve the project's static files (`serveStatic`, `/` maps to `/index.html`, malformed URLs get a 400 instead of an uncaught `URIError`, and the path-traversal guard checks `filePath.startsWith(ROOT + path.sep)` — a real directory boundary, not a string-prefix check that a sibling directory like `../haikuscript-secrets` could slip past); and handle `POST /build-exe` (`handleBuildExe`), which writes the posted IL text to a temp `.il` file, shells out to `ilasm.exe` (`execFile`, path from `ILASM_PATH` or the default Windows .NET Framework location) to assemble it into a real `.exe`, streams the `.exe` bytes back as the response, and cleans up the temp `.il`/`.exe`/`.pdb` files it created. Binds to `127.0.0.1` only, since this route runs an external process against arbitrary POSTed text and shouldn't be reachable from the LAN.
+```javascript
+// Static file server for the HaikuScript REPL, plus one POST route that
+// shells out to ilasm.exe to build a real .exe from generated IL text.
+// Zero npm dependencies — Node built-ins only.
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+const { execFile } = require('child_process');
+
+const ROOT = __dirname;
+const PORT = process.env.PORT || 3000;
+const ILASM_PATH = process.env.ILASM_PATH ||
+  'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\ilasm.exe';
+
+const MIME = {
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.json': 'application/json', '.hk': 'text/plain', '.md': 'text/plain',
+  '.wasm': 'application/wasm', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.png': 'image/png', '.ico': 'image/x-icon'
+};
+
+function serveStatic(req, res) {
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent(req.url.split('?')[0]);
+  } catch {
+    res.writeHead(400);
+    return res.end('Bad request');
+  }
+  if (urlPath === '/') urlPath = '/index.html';
+  const filePath = path.normalize(path.join(ROOT, urlPath));
+  if (!filePath.startsWith(ROOT + path.sep) && filePath !== ROOT) { res.writeHead(403); return res.end(); }
+  fs.readFile(filePath, (err, data) => {
+    if (err) { res.writeHead(404); return res.end('Not found'); }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    res.end(data);
+  });
+}
+
+function handleBuildExe(req, res) {
+  let body = '';
+  req.on('data', (chunk) => { body += chunk; });
+  req.on('end', () => {
+    let il;
+    try { il = JSON.parse(body).il; } catch { il = null; }
+    if (typeof il !== 'string' || !il) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Missing "il" in request body' }));
+    }
+
+    const id = crypto.randomBytes(6).toString('hex');
+    const tmpDir = os.tmpdir();
+    const ilPath = path.join(tmpDir, `haiku-${id}.il`);
+    const exePath = path.join(tmpDir, `haiku-${id}.exe`);
+
+    fs.writeFile(ilPath, il, (writeErr) => {
+      if (writeErr) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: writeErr.message }));
+      }
+
+      execFile(ILASM_PATH, [ilPath, '/exe', `/output:${exePath}`], (ilasmErr, stdout, stderr) => {
+        fs.unlink(ilPath, () => {});
+        if (ilasmErr) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: stderr || stdout || ilasmErr.message }));
+        }
+        fs.readFile(exePath, (readErr, exeData) => {
+          fs.unlink(exePath, () => {});
+          fs.unlink(exePath.replace(/\.exe$/, '.pdb'), () => {});
+          if (readErr) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: readErr.message }));
+          }
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': 'attachment; filename="HaikuProgram.exe"'
+          });
+          res.end(exeData);
+        });
+      });
+    });
+  });
+}
+
+http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/build-exe') return handleBuildExe(req, res);
+  if (req.method === 'GET') return serveStatic(req, res);
+  res.writeHead(405);
+  res.end();
+}).listen(PORT, '127.0.0.1', () => {
+  console.log(`HaikuScript REPL server: http://localhost:${PORT}/repl.html`);
+});
+```
+
+## 9. VS Code IDE Extension Connector (`vsc-extension/extension.js`)
 ```javascript
 const vscode = require('vscode');
 const { exec } = require('child_process');
@@ -1367,7 +1641,7 @@ function deactivate() {}
 module.exports = { activate, deactivate };
 ```
 
-## 9. Web Sandbox Test Harness (`index.html`)
+## 10. Web Sandbox Test Harness (`index.html`)
 A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` (built by `npm run compile`, which writes its `.wat`/`.wasm` output to `build/` — separate from the `.hk` sources under `src/`) and renders the result on screen (and to the console).
 ```html
 <!DOCTYPE html>
@@ -1419,7 +1693,7 @@ A minimal single-shot page that fetches the pre-compiled `build/fibonacci.wasm` 
 </html>
 ```
 
-## 10. Source Poetry Input Code (`src/fibonacci.hk`)
+## 11. Source Poetry Input Code (`src/fibonacci.hk`)
 All sample poems now live under `src/` — `fibonacci.hk` (below), plus `test_digits.hk` (digit-literal variant of the same program), `named_vars.hk` and `syllable_check.hk` (exercise the short named-identifier feature in §4), `ten_randoms.hk` (loop + `PrintStatement` demo, printing ten random draws instead of only the final `x`), `input_demo.hk` (exercises all four `INPUT` keywords — `guess`, `ask user`, `prompt`, and `set ... to input` — reading four values back with `PrintStatement`), `guess_number.hk` (a minimal guessing game combining all of the above — `loop until g equals s` keeps reading guesses until one matches a random secret, then prints the winning guess and how many tries it took, with no hints), `comparisons_demo.hk` (five self-contained counting loops exercising `<`, `>`, `and`, `or`, and `xor` — each printing a predictable result that proves the operator behaves correctly, including the `xor`-vs-`or` discrimination case where both terms are true simultaneously), `higher_lower.hk` (a real higher/lower guessing game using `if`/`else if`/`else` to print a hint after every wrong guess — nested `if`s inside the `else` branch skip the hint entirely on the winning guess, a fix for the "iteration ordering" bug that showed up when the naive version printed a misleading hint on the correct guess itself), and `while_demo.hk` (two counting loops proving `while`'s inverted polarity against `until` — a single-term `while a1 less than ten`, and a multi-term `while a1 less than ten and b less than ten` confirming the negation applies to the whole and/or/xor chain at once, not to one term of it).
 ```text
 Set x to zero
