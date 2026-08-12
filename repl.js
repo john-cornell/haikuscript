@@ -43,6 +43,160 @@
     wabt = await WabtModule();
   }
 
+  // ---- Theme ---------------------------------------------------------------
+  // The <head> inline script already set data-theme before first paint (see
+  // repl.html) — this just wires the toggle and keeps the icon in sync.
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('haikuscript-theme', theme); } catch (e) {}
+    const btn = $('themeToggle');
+    btn.textContent = theme === 'light' ? '🌙' : '☀️';
+    btn.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  }
+
+  // ---- Markdown -------------------------------------------------------------
+  // Minimal GFM-ish renderer for the Syntax Reference tab (GRAMMAR.md), kept
+  // dependency-free like the rest of this project. Covers what that one file
+  // actually uses: headings, **bold**/*italic*, code spans, fenced code
+  // blocks, links, (un)ordered lists, blockquotes, tables (with \| escaping
+  // inside cells), and horizontal rules — not general-purpose Markdown.
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // "AT_AT_CS<index>AT_AT" marks where a code span was pulled out, so the
+  // bold/italic/link passes below can't see (and mangle) its raw contents.
+  // Built from plain ASCII with no backslash-escapes, so nothing here risks
+  // being collapsed into a control character when this file is written out.
+  const CODE_MARK = String.fromCharCode(64, 64) + 'CS'; // "@@CS"
+  const CODE_MARK_END = String.fromCharCode(64, 64);    // "@@"
+
+  function renderInline(text) {
+    const codeSpans = [];
+    text = text.split(CODE_MARK).join('').split(CODE_MARK_END).join('');
+    text = text.replace(/`([^`]+)`/g, (_, code) => {
+      codeSpans.push(escapeHtml(code));
+      return CODE_MARK + (codeSpans.length - 1) + CODE_MARK_END;
+    });
+    text = escapeHtml(text);
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) =>
+      `<a href="${href}" target="_blank" rel="noopener">${label}</a>`);
+    text = text.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+    const markRe = new RegExp(CODE_MARK + '(\\d+)' + CODE_MARK_END, 'g');
+    text = text.replace(markRe, (_, i) => `<code>${codeSpans[Number(i)]}</code>`);
+    return text;
+  }
+
+  // Splits a `| a | b |` row into raw cell strings, honoring `\|` as an
+  // escaped literal pipe (GRAMMAR.md's pattern table uses this inside code
+  // spans, e.g. `` `(loop until\|until)` ``) rather than a cell boundary.
+  function splitTableRow(line) {
+    let row = line.trim();
+    if (row.startsWith('|')) row = row.slice(1);
+    if (row.endsWith('|')) row = row.slice(0, -1);
+    return row.split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, '|'));
+  }
+
+  function isTableSeparator(line) {
+    return /^\s*\|?[\s:|-]+\|?\s*$/.test(line) && line.includes('-');
+  }
+
+  function renderMarkdown(md) {
+    const lines = md.replace(/\r\n/g, '\n').split('\n');
+    let html = '';
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if (!line.trim()) { i++; continue; }
+
+      // Fenced code block.
+      if (/^```/.test(line)) {
+        const body = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) { body.push(lines[i]); i++; }
+        i++; // skip closing fence
+        html += `<pre><code>${escapeHtml(body.join('\n'))}</code></pre>\n`;
+        continue;
+      }
+
+      // Heading.
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length;
+        html += `<h${level}>${renderInline(heading[2])}</h${level}>\n`;
+        i++;
+        continue;
+      }
+
+      // Horizontal rule.
+      if (/^(---+|\*\*\*+)\s*$/.test(line)) { html += '<hr>\n'; i++; continue; }
+
+      // Table (header row + a following separator row of dashes/colons/pipes).
+      if (line.trim().startsWith('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        const header = splitTableRow(line);
+        i += 2; // header + separator
+        const bodyRows = [];
+        while (i < lines.length && lines[i].trim().startsWith('|')) { bodyRows.push(splitTableRow(lines[i])); i++; }
+        html += '<div class="md-table-wrap"><table><thead><tr>' +
+          header.map(c => `<th>${renderInline(c)}</th>`).join('') + '</tr></thead><tbody>' +
+          bodyRows.map(r => '<tr>' + r.map(c => `<td>${renderInline(c)}</td>`).join('') + '</tr>').join('') +
+          '</tbody></table></div>\n';
+        continue;
+      }
+
+      // Blockquote — consume consecutive `>` lines as one soft-wrapped block.
+      if (/^>\s?/.test(line)) {
+        const body = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) { body.push(lines[i].replace(/^>\s?/, '')); i++; }
+        html += `<blockquote><p>${renderInline(body.join(' '))}</p></blockquote>\n`;
+        continue;
+      }
+
+      // Unordered / ordered list — a run of items, each possibly spanning
+      // soft-wrapped continuation lines with no marker of its own.
+      const ulItem = line.match(/^\s*[-*+]\s+(.*)$/);
+      const olItem = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (ulItem || olItem) {
+        const ordered = !!olItem;
+        const itemRe = ordered ? /^\s*\d+\.\s+(.*)$/ : /^\s*[-*+]\s+(.*)$/;
+        const items = [];
+        while (i < lines.length) {
+          const m = lines[i].match(itemRe);
+          if (m) {
+            items.push(m[1]);
+          } else if (lines[i].trim() && !isTableSeparator(lines[i])) {
+            items[items.length - 1] += ' ' + lines[i].trim();
+          } else {
+            break;
+          }
+          i++;
+        }
+        const tag = ordered ? 'ol' : 'ul';
+        html += `<${tag}>` + items.map(it => `<li>${renderInline(it)}</li>`).join('') + `</${tag}>\n`;
+        continue;
+      }
+
+      // Paragraph — soft-wrapped lines until a blank line or a new block.
+      const para = [line];
+      i++;
+      while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|>|[-*+]\s|\d+\.\s|---+\s*$|\*\*\*+\s*$)/.test(lines[i])) {
+        para.push(lines[i]);
+        i++;
+      }
+      html += `<p>${renderInline(para.join(' '))}</p>\n`;
+    }
+
+    return html;
+  }
+
   function highlightLine(line) {
     if (!line) return;
     const lines = editor.value.split('\n');
@@ -262,11 +416,13 @@
 
     // Static reference panel — fetched once at load, not tied to Run/Compile.
     fetch('/GRAMMAR.md').then(r => r.ok ? r.text() : null).then(t => {
-      if (t) $('grammar').textContent = t;
+      if (t) $('grammar').innerHTML = renderMarkdown(t);
     }).catch(() => {});
 
     $('tabBtnRepl').addEventListener('click', () => switchTab('repl'));
     $('tabBtnGrammar').addEventListener('click', () => switchTab('grammar'));
+    $('themeToggle').addEventListener('click', toggleTheme);
+    applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
 
     $('runBtn').addEventListener('click', run);
     $('compileBtn').addEventListener('click', compileOnly);

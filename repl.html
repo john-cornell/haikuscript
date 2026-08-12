@@ -5,16 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HaikuScript REPL</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%8C%B8</text></svg>">
+  <script>
+    // Runs before first paint so the page never flashes the wrong theme.
+    (function () {
+      try {
+        var t = localStorage.getItem('haikuscript-theme');
+        if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
   <style>
     /* Palette sampled from the banner art: slate ground, teal circuitry,
-       cherry-blossom pink. The page commits to dark so the banner sits in
-       its own world instead of floating on white. */
+       cherry-blossom pink. Dark is the default; data-theme="light" (set by
+       the inline script above, toggled by #themeToggle) swaps the vars. */
     :root {
       color-scheme: dark;
       --bg: #11161a;
+      --bg-glow: #1b2830;
       --surface: #1a2128;
       --surface-2: #212b33;
       --code-bg: #0e1317;
+      --code-text: #cfdcd9;
       --border: #2b3741;
       --border-soft: #222c34;
       --text: #e6edf3;
@@ -22,11 +34,38 @@
       --text-faint: #67747f;
       --accent: #35d0b5;
       --accent-hi: #55e5cb;
+      --accent-tint: rgba(53,208,181,.12);
+      --accent-border: rgba(53,208,181,.34);
       --danger: #ff7d7d;
       --warn: #f0b45e;
+      --scrollbar: #38454f;
+      --scrollbar-hover: #475865;
       --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
       --radius: 10px;
       --shadow: 0 1px 2px rgba(0,0,0,.35), 0 14px 32px -18px rgba(0,0,0,.8);
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f3f6f7;
+      --bg-glow: #dcf0ec;
+      --surface: #ffffff;
+      --surface-2: #eef2f3;
+      --code-bg: #eef3f3;
+      --code-text: #1d3330;
+      --border: #d7e0e2;
+      --border-soft: #e3eaec;
+      --text: #172223;
+      --text-dim: #4c5d61;
+      --text-faint: #8a9a9d;
+      --accent: #0c9782;
+      --accent-hi: #087566;
+      --accent-tint: rgba(12,151,130,.09);
+      --accent-border: rgba(12,151,130,.4);
+      --danger: #c23434;
+      --warn: #9c6008;
+      --scrollbar: #c3ced0;
+      --scrollbar-hover: #a9b6b8;
+      --shadow: 0 1px 2px rgba(20,40,40,.06), 0 14px 28px -18px rgba(20,40,40,.18);
     }
     * { box-sizing: border-box; }
     html { scrollbar-gutter: stable; }
@@ -36,22 +75,23 @@
       padding: 1.75rem 1.5rem 3rem;
       max-width: 1180px;
       background:
-        radial-gradient(1100px 520px at 50% -8%, #1b2830 0%, transparent 70%),
+        radial-gradient(1100px 520px at 50% -8%, var(--bg-glow) 0%, transparent 70%),
         var(--bg);
       color: var(--text);
       line-height: 1.5;
       min-height: 100vh;
+      transition: background-color .15s, color .15s;
     }
 
     /* ---- Scrollbars ---- */
-    * { scrollbar-width: thin; scrollbar-color: #38454f transparent; }
+    * { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
     ::-webkit-scrollbar { width: 11px; height: 11px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
-      background: #35424c; border-radius: 8px;
+      background: var(--scrollbar); border-radius: 8px;
       border: 3px solid transparent; background-clip: content-box;
     }
-    ::-webkit-scrollbar-thumb:hover { background: #475865; background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); background-clip: content-box; }
 
     /* ---- Masthead ---- */
     .banner {
@@ -61,6 +101,8 @@
       margin-bottom: 1rem;
       border: 1px solid var(--border);
       border-radius: 14px;
+      /* Always dark: the artwork's own ground is dark, so this stays a
+         fixed showcase plate rather than flipping with the page theme. */
       background: linear-gradient(150deg, #1d262d 0%, #141a20 55%, #121a1e 100%);
       box-shadow: var(--shadow);
       overflow: hidden;
@@ -85,15 +127,31 @@
     }
     .banner .repl-tag {
       font-size: .72rem; font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
-      color: var(--accent); padding: .22rem .7rem; border-radius: 999px;
+      color: #55e5cb; padding: .22rem .7rem; border-radius: 999px;
       border: 1px solid rgba(53,208,181,.35); background: rgba(53,208,181,.08);
     }
 
+    .sub-row {
+      display: flex; align-items: center; justify-content: center; gap: .7rem;
+      margin-bottom: .7rem;
+    }
     p.sub {
-      margin: 0 0 .7rem; text-align: center;
+      margin: 0; text-align: center;
       color: var(--text-dim); font-size: .92rem;
     }
     p.sub strong { color: var(--text); font-weight: 600; }
+
+    #themeToggle {
+      flex: none; width: 2rem; height: 2rem; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1rem; line-height: 1; cursor: pointer;
+      color: var(--text-dim); background: var(--surface);
+      border: 1px solid var(--border); border-radius: 999px;
+      transition: background .13s, color .13s, border-color .13s, transform .13s;
+    }
+    #themeToggle:hover { color: var(--text); border-color: var(--accent-border); background: var(--surface-2); }
+    #themeToggle:active { transform: scale(.92); }
+    #themeToggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-tint); }
 
     /* pipeline stage chips — a visual echo of the panels below */
     .pipeline {
@@ -105,7 +163,7 @@
       padding: .2rem .6rem; border-radius: 999px;
       background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-dim);
     }
-    .pipeline span:last-child { color: var(--accent); border-color: rgba(53,208,181,.3); }
+    .pipeline span:last-child { color: var(--accent); border-color: var(--accent-border); }
     .pipeline i { color: var(--text-faint); font-style: normal; }
 
     /* ---- Toolbar ---- */
@@ -127,7 +185,7 @@
     .toolbar button:active { transform: translateY(1px); }
     .toolbar button:focus-visible {
       outline: none; border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(53,208,181,.2);
+      box-shadow: 0 0 0 3px var(--accent-tint);
     }
     #runBtn {
       background: linear-gradient(180deg, #3ad9bd, #23b79c);
@@ -136,10 +194,10 @@
     }
     #runBtn:hover { background: linear-gradient(180deg, #4ee6ca, #2ac5a8); color: #06231d; }
     #compileBtn {
-      color: var(--accent); border-color: rgba(53,208,181,.34);
-      background: rgba(53,208,181,.07);
+      color: var(--accent); border-color: var(--accent-border);
+      background: var(--accent-tint);
     }
-    #compileBtn:hover { color: var(--accent-hi); background: rgba(53,208,181,.14); border-color: rgba(53,208,181,.55); }
+    #compileBtn:hover { color: var(--accent-hi); border-color: var(--accent); }
     .tb-sep { width: 1px; height: 22px; background: var(--border); margin: 0 .3rem; }
     #fileName {
       margin-left: auto; font-family: var(--mono); font-size: .78rem;
@@ -160,9 +218,9 @@
       margin-bottom: -1px;
       transition: color .13s, border-color .13s, background .13s;
     }
-    .tab-btn:hover { color: var(--text-dim); background: rgba(255,255,255,.03); }
+    .tab-btn:hover { color: var(--text-dim); background: var(--surface-2); }
     .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-    .tab-btn:focus-visible { outline: none; color: var(--accent); background: rgba(53,208,181,.1); }
+    .tab-btn:focus-visible { outline: none; color: var(--accent); background: var(--accent-tint); }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
@@ -181,16 +239,16 @@
       width: 100%; min-height: 440px;
       font-family: var(--mono); font-size: .95rem; line-height: 1.8;
       padding: 1rem 1.15rem;
-      color: #e9f2ef; background: var(--code-bg);
+      color: var(--code-text); background: var(--code-bg);
       border: 1px solid var(--border); border-radius: var(--radius);
       resize: vertical; box-shadow: var(--shadow);
       transition: border-color .13s, box-shadow .13s;
     }
     textarea:focus {
-      outline: none; border-color: rgba(53,208,181,.5);
-      box-shadow: 0 0 0 3px rgba(53,208,181,.14), var(--shadow);
+      outline: none; border-color: var(--accent-border);
+      box-shadow: 0 0 0 3px var(--accent-tint), var(--shadow);
     }
-    textarea::selection { background: rgba(53,208,181,.28); }
+    textarea::selection { background: var(--accent-tint); }
 
     .status {
       display: flex; align-items: center; gap: .5rem;
@@ -221,7 +279,7 @@
     }
     .result.ok {
       color: var(--accent-hi); border-left-color: var(--accent);
-      background: linear-gradient(90deg, rgba(53,208,181,.12), var(--surface) 60%);
+      background: linear-gradient(90deg, var(--accent-tint), var(--surface) 60%);
     }
     .result.err {
       font-size: 1rem; font-weight: 600;
@@ -255,13 +313,11 @@
     #buildExeBtn {
       font: inherit; font-size: .74rem; font-weight: 600;
       margin-left: auto; padding: .28rem .7rem; border-radius: 999px; cursor: pointer;
-      color: var(--accent); background: rgba(53,208,181,.09);
-      border: 1px solid rgba(53,208,181,.34);
+      color: var(--accent); background: var(--accent-tint);
+      border: 1px solid var(--accent-border);
       transition: background .13s, color .13s, border-color .13s;
     }
-    #buildExeBtn:hover:not(:disabled) {
-      color: var(--accent-hi); background: rgba(53,208,181,.18); border-color: rgba(53,208,181,.6);
-    }
+    #buildExeBtn:hover:not(:disabled) { color: var(--accent-hi); border-color: var(--accent); }
     #buildExeBtn:disabled {
       color: var(--text-faint); background: transparent;
       border-color: var(--border); cursor: not-allowed; opacity: .65;
@@ -270,21 +326,62 @@
       margin: 0; padding: .85rem 1rem;
       max-height: 360px; overflow: auto;
       font-family: var(--mono); font-size: .79rem; line-height: 1.65;
-      color: #cfdcd9; background: var(--code-bg);
+      color: var(--code-text); background: var(--code-bg);
       border-top: 1px solid var(--border-soft);
     }
     pre:empty::before {
       content: "—"; color: var(--text-faint);
     }
 
-    /* ---- Syntax reference tab ---- */
+    /* ---- Syntax reference tab (rendered Markdown) ---- */
     #grammar {
-      white-space: pre-wrap; word-wrap: break-word;
-      max-height: none; padding: 1.4rem 1.6rem;
-      font-size: .84rem; line-height: 1.75;
+      max-height: none; padding: 1.5rem 1.8rem;
+      font-size: .92rem; line-height: 1.65;
       border: 1px solid var(--border); border-radius: var(--radius);
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow); background: var(--surface); color: var(--text);
     }
+    #grammar > :first-child { margin-top: 0; }
+    #grammar h1, #grammar h2, #grammar h3 {
+      color: var(--text); line-height: 1.3;
+      margin: 1.6em 0 .6em;
+    }
+    #grammar h1 { font-size: 1.5rem; padding-bottom: .4em; border-bottom: 1px solid var(--border); }
+    #grammar h2 { font-size: 1.2rem; padding-bottom: .35em; border-bottom: 1px solid var(--border-soft); }
+    #grammar h3 { font-size: 1.02rem; color: var(--accent); }
+    #grammar p { margin: .8em 0; }
+    #grammar strong { color: var(--text); font-weight: 700; }
+    #grammar em { color: var(--text-dim); }
+    #grammar a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-border); }
+    #grammar a:hover { color: var(--accent-hi); border-bottom-color: var(--accent-hi); }
+    #grammar code {
+      font-family: var(--mono); font-size: .87em;
+      padding: .15em .4em; border-radius: 5px;
+      background: var(--code-bg); color: var(--accent-hi);
+      border: 1px solid var(--border-soft);
+    }
+    #grammar pre {
+      margin: 1em 0; max-height: none; border: 1px solid var(--border-soft); border-radius: 8px; border-top: 1px solid var(--border-soft);
+    }
+    #grammar pre code { padding: 0; border: none; background: none; color: var(--code-text); }
+    #grammar ul, #grammar ol { margin: .8em 0; padding-left: 1.4em; }
+    #grammar li { margin: .35em 0; }
+    #grammar li::marker { color: var(--text-faint); }
+    #grammar blockquote {
+      margin: 1em 0; padding: .2em 1em;
+      border-left: 3px solid var(--accent-border);
+      background: var(--accent-tint); color: var(--text-dim);
+      border-radius: 0 6px 6px 0;
+    }
+    #grammar blockquote p { margin: .6em 0; }
+    #grammar hr { border: none; border-top: 1px solid var(--border); margin: 1.8em 0; }
+    #grammar .md-table-wrap { overflow-x: auto; margin: 1em 0; }
+    #grammar table { border-collapse: collapse; width: 100%; font-size: .88em; }
+    #grammar th, #grammar td {
+      padding: .5em .75em; border: 1px solid var(--border);
+      text-align: left; vertical-align: top;
+    }
+    #grammar th { background: var(--surface-2); color: var(--text); font-weight: 700; }
+    #grammar tr:nth-child(even) td { background: var(--surface-2); }
   </style>
 </head>
 <body>
@@ -292,7 +389,10 @@
     <img src="/assets/Banner2.png" alt="HaikuScript">
     <span class="repl-tag">REPL</span>
   </div>
-  <p class="sub">Write the poem, press <strong>Run</strong> — every stage runs in your browser.</p>
+  <div class="sub-row">
+    <p class="sub">Write the poem, press <strong>Run</strong> — every stage runs in your browser.</p>
+    <button id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
+  </div>
   <div class="pipeline">
     <span>lex</span><i>→</i><span>syllable audit</span><i>→</i><span>AST</span><i>→</i><span>WAT</span><i>→</i><span>WASM</span><i>→</i><span>execute</span>
   </div>
@@ -346,7 +446,7 @@
   </div>
 
   <div id="tabGrammar" class="tab-panel">
-    <pre id="grammar"></pre>
+    <div id="grammar"></div>
   </div>
 
   <!-- Shared compiler core, then the WABT assembler, then the REPL driver -->
