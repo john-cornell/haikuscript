@@ -54,44 +54,12 @@ function handleBuildExe(req, res) {
         return res.end(JSON.stringify({ error: writeErr.message }));
       }
 
-      // In WSL, Windows executables must be called through cmd.exe with converted paths
-      const isWSL = process.platform === 'linux' && fs.existsSync('/proc/version') &&
-        fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
-
-      if (isWSL) {
-        // WSL: convert file paths (ILASM_PATH is already in Windows format) and call through cmd.exe
-        const { spawnSync } = require('child_process');
-        const winIlPath = spawnSync('wslpath', ['-w', ilPath]).stdout.toString().trim();
-        const winExePath = spawnSync('wslpath', ['-w', exePath]).stdout.toString().trim();
-
-        execFile('cmd.exe', ['/c', ILASM_PATH, winIlPath, '/exe', `/output:${winExePath}`],
-          (ilasmErr, stdout, stderr) => {
-            fs.unlink(ilPath, () => {});
-            if (ilasmErr) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              return res.end(JSON.stringify({ error: stderr || stdout || ilasmErr.message }));
-            }
-            fs.readFile(exePath, (readErr, exeData) => {
-              fs.unlink(exePath, () => {});
-              if (readErr) {
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                return res.end(JSON.stringify({ error: readErr.message }));
-              }
-              res.writeHead(200, {
-                'Content-Type': 'application/octet-stream',
-                'Content-Disposition': 'attachment; filename="HaikuProgram.exe"'
-              });
-              res.end(exeData);
-            });
-          });
-      } else {
-        // Windows: direct call
-        execFile(ILASM_PATH, [ilPath, '/exe', `/output:${exePath}`], (ilasmErr, stdout, stderr) => {
-          fs.unlink(ilPath, () => {});
-          if (ilasmErr) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ error: stderr || stdout || ilasmErr.message }));
-          }
+      execFile(ILASM_PATH, [ilPath, '/exe', `/output:${exePath}`], (ilasmErr, stdout, stderr) => {
+        fs.unlink(ilPath, () => {});
+        if (ilasmErr) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: stderr || stdout || ilasmErr.message }));
+        }
         fs.readFile(exePath, (readErr, exeData) => {
           fs.unlink(exePath, () => {});
           if (readErr) {
@@ -104,8 +72,7 @@ function handleBuildExe(req, res) {
           });
           res.end(exeData);
         });
-        });
-      }
+      });
     });
   });
 }
