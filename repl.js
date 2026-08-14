@@ -263,10 +263,31 @@
       setStatus('Phase 4 — executing…', 'busy');
       const printed = [];
       const readInput = () => {
-        const value = parseInt(window.prompt('Input:') || '', 10);
+        // Put everything printed so far INSIDE the dialog's own message —
+        // relying on the page behind a native prompt() to have repainted
+        // isn't guaranteed, but text passed into prompt() itself always shows.
+        // Newest first, so the latest feedback doesn't get pushed below the
+        // fold as the history grows.
+        const context = printed.length ? 'Input:\n\n' + printed.slice().reverse().join('\n') : 'Input:';
+        const raw = window.prompt(context);
+        // window.prompt returns null on Cancel/Esc, distinct from an empty OK —
+        // without this check that null gets coerced to 0 below, so Cancel silently
+        // becomes "guessed 0" and a loop just re-prompts forever instead of stopping.
+        if (raw === null) {
+          const cancelled = new Error('Cancelled by user.');
+          cancelled.cancelled = true;
+          throw cancelled;
+        }
+        const value = parseInt(raw, 10);
         return Number.isNaN(value) ? 0 : value;
       };
-      const importObject = { env: { print: (v) => printed.push(v), input: readInput } };
+      const writeOutput = (v) => {
+        printed.push(v);
+        // Still flush to the panel too, so output is visible there once the
+        // script finishes (or if it never calls input again).
+        $('printed').textContent = printed.join('\n');
+      };
+      const importObject = { env: { print: writeOutput, input: readInput } };
       const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
 
       const value = instance.exports.compute();
@@ -275,7 +296,13 @@
       $('result').className = 'result ok';
       setStatus('Done ✓', 'ok');
     } catch (err) {
-      reportError(err);
+      if (err && err.cancelled) {
+        $('result').textContent = 'Cancelled.';
+        $('result').className = 'result';
+        setStatus('Cancelled', '');
+      } else {
+        reportError(err);
+      }
     }
   }
 
